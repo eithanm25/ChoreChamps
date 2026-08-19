@@ -3,6 +3,9 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { AppDataSource } from './data-source';
+import authRoutes from './routes/auth.routes';
+import familyRoutes from './routes/family.routes';
+import taskRoutes from './routes/task.routes';
 
 dotenv.config();
 
@@ -12,15 +15,9 @@ const PORT = parseInt(process.env.SERVER_PORT ?? '5000', 10);
 app.use(cors());
 app.use(express.json());
 
-/** Health check — confirms the API is running and the database is reachable. */
-app.get('/api/health', (_req: Request, res: Response) => {
-  const dbConnected = AppDataSource.isInitialized;
-  res.status(dbConnected ? 200 : 503).json({
-    status: dbConnected ? 'ok' : 'degraded',
-    database: dbConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString(),
-  });
-});
+app.use('/api/auth', authRoutes);
+app.use('/api/family', familyRoutes);
+app.use('/api/tasks', taskRoutes);
 
 async function bootstrap(): Promise<void> {
   try {

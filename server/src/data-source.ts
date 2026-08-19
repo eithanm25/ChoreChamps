@@ -1,7 +1,9 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import dotenv from 'dotenv';
+import { Family } from './entities/Family';
 import { User } from './entities/User';
+import { ChildProfile } from './entities/ChildProfile';
 import { Task } from './entities/Task';
 import { Submission } from './entities/Submission';
 
@@ -16,5 +18,5 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_DATABASE ?? 'chore_champs',
   synchronize: true, // auto-sync schema in development; disable in production
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Task, Submission],
+  entities: [Family, User, ChildProfile, Task, Submission],
 });

@@ -7,6 +7,7 @@ import {
   OneToOne,
   JoinColumn,
 } from 'typeorm';
+import { Family } from './Family';
 import { User } from './User';
 import { Submission } from './Submission';
 
@@ -24,9 +25,10 @@ export enum TaskStatus {
  * - basePrice: guaranteed payout on approval.
  * - maxBonusPrice: maximum possible bonus; actual bonus = (finalScore / 100) * maxBonusPrice.
  *
- * Assignment constraint:
- * A child may have only ONE active task in 'pending' or 'completed' status at a time.
- * Enforce this in service/route logic before assigning or accepting a task.
+ * Assignment guardrails (enforced in task routes/services):
+ * - A child may accept a task only when they have NO other task in 'pending' status.
+ * - Cancel-submission rules apply when a completed task would leave the child blocked
+ *   by an existing pending task (see taskGuardrails service).
  */
 @Entity('tasks')
 export class Task {
@@ -56,8 +58,10 @@ export class Task {
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.OPEN })
   status!: TaskStatus;
 
-  @Column({ type: 'uuid' })
-  familyId!: string;
+  /** The household this chore belongs to. */
+  @ManyToOne(() => Family, (family) => family.tasks)
+  @JoinColumn({ name: 'familyId' })
+  family!: Family;
 
   /** The child responsible for completing this task (nullable while open). */
   @ManyToOne(() => User, (user) => user.tasks, { nullable: true })

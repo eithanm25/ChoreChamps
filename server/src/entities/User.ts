@@ -3,7 +3,12 @@ import {
   PrimaryGeneratedColumn,
   Column,
   OneToMany,
+  ManyToOne,
+  OneToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Family } from './Family';
+import { ChildProfile } from './ChildProfile';
 import { Task } from './Task';
 import { Submission } from './Submission';
 
@@ -13,12 +18,15 @@ export enum UserRole {
 }
 
 /**
- * A family member — either a parent (manager) or a child (chore doer).
+ * A family member — parent (manager) or child (chore doer).
  *
- * Allowance rules:
- * - Each child has an independent balance; there is NO competition between siblings.
- * - Earnings come from basePrice + bonus on approved tasks.
- * - Bonus formula: (finalScore / 100) * maxBonusPrice
+ * Auth flow:
+ * - Primary parent signs up with email/password; familyId is null until POST /api/family/create.
+ * - Co-parents and children are created by a parent (email nullable, name + password required).
+ *
+ * Relations:
+ * - User → Family: ManyToOne (nullable until the user joins or creates a household).
+ * - User → ChildProfile: OneToOne (nullable; only populated for role = child).
  */
 @Entity('users')
 export class User {
@@ -28,20 +36,24 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   name!: string;
 
+  /** Nullable for co-parents and children created in-app by a parent. */
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
+  email!: string | null;
+
+  @Column({ type: 'varchar', length: 255 })
+  password!: string;
+
   @Column({ type: 'enum', enum: UserRole })
   role!: UserRole;
 
-  /** Groups users into a single household. */
-  @Column({ type: 'uuid' })
-  familyId!: string;
+  /** Household membership — null for a newly signed-up parent before family creation. */
+  @ManyToOne(() => Family, (family) => family.members, { nullable: true })
+  @JoinColumn({ name: 'familyId' })
+  family!: Family | null;
 
-  /** Current spendable allowance balance. */
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  balance!: string;
-
-  /** Lifetime bonus earnings (excludes base price). */
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  totalBonusEarned!: string;
+  /** Allowance ledger — only set for children. */
+  @OneToOne(() => ChildProfile, (profile) => profile.user, { nullable: true })
+  childProfile!: ChildProfile | null;
 
   /** Tasks assigned to this child. */
   @OneToMany(() => Task, (task) => task.assignedTo)
