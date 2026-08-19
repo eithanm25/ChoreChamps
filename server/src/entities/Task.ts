@@ -63,6 +63,11 @@ export class Task {
   @JoinColumn({ name: 'familyId' })
   family!: Family;
 
+  /** The parent who created this task. */
+  @ManyToOne(() => User, (user) => user.createdTasks)
+  @JoinColumn({ name: 'createdById' })
+  createdBy!: User;
+
   /** The child responsible for completing this task (nullable while open). */
   @ManyToOne(() => User, (user) => user.tasks, { nullable: true })
   @JoinColumn({ name: 'assignedToId' })

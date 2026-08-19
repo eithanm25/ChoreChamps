@@ -59,6 +59,10 @@ export class User {
   @OneToMany(() => Task, (task) => task.assignedTo)
   tasks!: Task[];
 
+  /** Tasks created by this parent. */
+  @OneToMany(() => Task, (task) => task.createdBy)
+  createdTasks!: Task[];
+
   /** Photo submissions made by this child. */
   @OneToMany(() => Submission, (submission) => submission.child)
   submissions!: Submission[];

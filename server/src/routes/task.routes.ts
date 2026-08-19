@@ -4,7 +4,7 @@ import { AppDataSource } from '../data-source';
 import { Task, TaskStatus } from '../entities/Task';
 import { Submission } from '../entities/Submission';
 import { ChildProfile } from '../entities/ChildProfile';
-import { UserRole } from '../entities/User';
+import { UserRole, User } from '../entities/User';
 import {
   AuthenticatedRequest,
   requireAuth,
@@ -16,6 +16,157 @@ import { reviewChorePhoto } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
 
 const router = Router();
+
+/**
+ * POST /api/tasks/
+ * Parent creates a new task for their family.
+ */
+router.post(
+  '/',
+  requireAuth,
+  requireParent,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { title, description, basePrice, maxBonusPrice } = req.body as {
+      title?: string;
+      description?: string;
+      basePrice?: unknown;
+      maxBonusPrice?: unknown;
+    };
+
+    if (!title || typeof title !== 'string') {
+      res.status(400).json({ error: 'title is required' });
+      return;
+    }
+
+    if (typeof basePrice !== 'number' || typeof maxBonusPrice !== 'number') {
+      res.status(400).json({ error: 'basePrice and maxBonusPrice are required and must be numbers' });
+      return;
+    }
+
+    const parent = req.user!;
+    if (!parent.family) {
+      res.status(400).json({ error: 'You must belong to a family to create tasks' });
+      return;
+    }
+
+    const taskRepo = AppDataSource.getRepository(Task);
+    const task = taskRepo.create({
+      title,
+      description: description ?? '',
+      basePrice: basePrice.toFixed(2),
+      maxBonusPrice: maxBonusPrice.toFixed(2),
+      status: TaskStatus.OPEN,
+      family: parent.family,
+      createdBy: parent,
+    });
+
+    await taskRepo.save(task);
+
+    res.status(201).json({ task });
+  },
+);
+
+/**
+ * GET /api/tasks/open
+ * Returns all open tasks for the logged-in user's family.
+ */
+router.get('/open', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  if (!user.family) {
+    res.status(400).json({ error: 'You must belong to a family to view tasks' });
+    return;
+  }
+
+  const taskRepo = AppDataSource.getRepository(Task);
+  const tasks = await taskRepo.find({
+    where: { status: TaskStatus.OPEN, family: { id: user.family.id } },
+    relations: ['family'],
+  });
+
+  res.json({ tasks });
+});
+
+/**
+ * GET /api/tasks/family-tasks
+ * Returns all tasks for the logged-in user's family, with relations for UI grouping.
+ */
+router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  if (!user.family) {
+    res.status(400).json({ error: 'You must belong to a family to view tasks' });
+    return;
+  }
+
+  const taskRepo = AppDataSource.getRepository(Task);
+  const tasks = await taskRepo.find({
+    where: { family: { id: user.family.id } },
+    relations: ['assignedTo', 'submission', 'family', 'createdBy'],
+    order: { createdAt: 'DESC' },
+  });
+
+  res.json({ tasks });
+});
+
+/**
+ * GET /api/tasks/family-members
+ * Returns family members with custom stats for parents and children.
+ */
+router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  if (!user.family) {
+    res.status(400).json({ error: 'You must belong to a family to view members' });
+    return;
+  }
+
+  // Use the loaded family ID from the authenticated user
+  const familyId = typeof user.family === 'string' ? user.family : user.family.id;
+  const userRepo = AppDataSource.getRepository(User);
+  const taskRepo = AppDataSource.getRepository(Task);
+
+  // Fetch all family members safely
+  const members = await userRepo.find({
+    where: { family: { id: familyId } },
+    relations: ['family', 'childProfile'],
+    order: { name: 'ASC' },
+  });
+
+  const results = await Promise.all(
+    members.map(async (m) => {
+      // Safe fallback: if m.family is missing, use the logged-in user's family name
+      const currentFamilyName = m.family?.familyName ?? user.family?.familyName ?? 'Our Family';
+
+      if (m.role === UserRole.PARENT) {
+        // Count tasks in the family created SPECIFICALLY by this parent.
+        const totalTasksUploaded = await taskRepo.count({
+          where: { family: { id: familyId }, createdBy: { id: m.id } },
+        });
+        
+        return {
+          id: m.id,
+          name: m.name,
+          role: m.role,
+          email: m.email ?? '',
+          familyName: currentFamilyName,
+          totalTasksUploaded,
+        };
+      }
+
+      // If Child: Map fields and safely convert decimal strings to numbers for the frontend
+      return {
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        email: m.email ?? '',
+        familyName: currentFamilyName,
+        lifetimeTasksCount: m.childProfile ? Number(m.childProfile.lifetimeTasksCount) : 0,
+        lifetimeEarnings: m.childProfile ? Number(m.childProfile.lifetimeEarnings) : 0,
+      };
+    }),
+  );
+
+  res.json({ members: results });
+});
+
 
 /**
  * Money is stored as decimal strings; convert to integer cents for arithmetic so

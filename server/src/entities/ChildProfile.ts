@@ -31,4 +31,12 @@ export class ChildProfile {
   /** Lifetime bonus earnings (excludes base price). */
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   totalBonusEarned!: string;
+
+  /** Lifetime earnings including base price + bonuses. */
+  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
+  lifetimeEarnings!: string;
+
+  /** Total number of approved tasks the child has completed. */
+  @Column({ type: 'int', default: 0 })
+  lifetimeTasksCount!: number;
 }
