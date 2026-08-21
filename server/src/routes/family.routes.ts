@@ -13,7 +13,7 @@ import { signToken } from '../utils/token';
 
 const router = Router();
 
-const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:5000';
+const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:5173';
 
 /**
  * POST /api/family/create
@@ -106,7 +106,7 @@ router.post(
 
     await userRepo.save(coParent);
 
-    const uniqueLink = `${APP_BASE_URL}/join/co-parent/${coParent.id}`;
+    const uniqueLink = `${APP_BASE_URL}/${coParent.id}`;
 
     res.status(201).json({
       coParent: {
@@ -164,7 +164,7 @@ router.post(
 
     await profileRepo.save(profile);
 
-    const uniqueLink = `${APP_BASE_URL}/join/child/${child.id}`;
+    const uniqueLink = `${APP_BASE_URL}/${child.id}`;
 
     res.status(201).json({
       child: {
