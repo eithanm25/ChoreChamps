@@ -4,6 +4,7 @@ import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
 import ParentTasksList, { type Task } from '../components/ParentTasksList';
+import MessageBanner from '../components/MessageBanner';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -35,6 +36,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const [taskLoading, setTaskLoading] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]); 
   const [showPassword, setShowPassword] = useState(false);
+  const [dashboardMessage, setDashboardMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
 
   // שליפת חברי המשפחה מהשרת
@@ -92,13 +94,14 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (response.data.uniqueLink) {
         setInviteLink(response.data.uniqueLink);
       }
+      setDashboardMessage({ type: 'success', text: `${form.name.trim()} נוסף/ה בהצלחה למערכת` });
       await refreshMembers();
     } catch (err: unknown) {
       let errorMessage = 'שגיאה בהוספת בן משפחה';
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
-      alert(errorMessage);
+      setDashboardMessage({ type: 'error', text: errorMessage });
     } finally {
       setFormLoading(false);
     }
@@ -108,7 +111,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const handleDeleteMember = async (memberId: string, memberName: string) => {
     // הגנה בפרונט: מניעת מחיקה עצמית
     if (memberId === user.id) {
-      alert('אינך יכול למחוק את עצמך מהמערכת!');
+      setDashboardMessage({ type: 'error', text: 'אינך יכול למחוק את עצמך מהמערכת!' });
       return;
     }
 
@@ -125,7 +128,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
-      alert(errorMessage);
+      setDashboardMessage({ type: 'error', text: errorMessage });
     }
   };
 
@@ -171,7 +174,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
-      alert(errorMessage);
+      setDashboardMessage({ type: 'error', text: errorMessage });
     } finally {
       setTaskLoading(false);
     }
@@ -202,9 +205,12 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       try {
         const fullText = `${shareData.text}${shareData.url}`;
         await navigator.clipboard.writeText(fullText);
-        alert(`📋 הקישור וההודעה המעוצבת הועתקו ללוח בהצלחה!\nעברו לוואטסאפ או למייל והדביקו (Ctrl+V) כדי לשלוח ל-${memberName}.`);
+        setDashboardMessage({
+          type: 'success',
+          text: `📋 הקישור וההודעה המעוצבת הועתקו בהצלחה. מעבירים לוואטסאפ או למייל כדי לשלוח ל-${memberName}.`,
+        });
       } catch (err) {
-        alert('שגיאה בהעתקת הקישור' + err);
+        setDashboardMessage({ type: 'error', text: 'שגיאה בהעתקת הקישור' + String(err) });
       }
     }
   };
@@ -225,6 +231,10 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
     <div className="min-h-screen bg-slate-900 text-white p-6 text-right font-sans" dir="rtl">
       <div className="max-w-6xl mx-auto flex flex-col gap-6">
         
+        {dashboardMessage && (
+          <MessageBanner type={dashboardMessage.type} text={dashboardMessage.text} onDismiss={() => setDashboardMessage(null)} />
+        )}
+
         {/* ראש הדף - כותרת עליונה */}
         <header className="bg-slate-800/60 backdrop-blur border border-slate-700/60 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
           <div>

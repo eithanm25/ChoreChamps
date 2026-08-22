@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
+import MessageBanner from './MessageBanner';
 
 // הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
 interface AiSummaryJson {
@@ -41,11 +42,12 @@ interface ParentTasksListProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }
 
-type TaskTab = 'in-progress' | 'pending-approval' | 'approved';
+type TaskTab = 'unassigned' | 'in-progress' | 'pending-approval' | 'approved';
 
 export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProps): React.ReactNode {
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TaskTab>('in-progress');
+  const [activeTab, setActiveTab] = useState<TaskTab>('unassigned');
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
   // רשימת הילדים לצורך תיבת הבחירה בעריכה
   const [children, setChildren] = useState<FamilyMember[]>([]);
@@ -85,7 +87,7 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
     };
 
     initComponent();
-  }, [setTasks]);
+  }, [setTasks, children]);
 
   // 2. פונקציית מחיקת משימה חכמה (🗑️) עם עדכון ויזואלי מיידי
   const handleDelete = async (taskId: string, taskTitle: string) => {
@@ -102,7 +104,7 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
-      alert(errorMessage);
+      setMessage({ type: 'error', text: errorMessage });
     }
   };
 
@@ -145,6 +147,7 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
       // עדכון ויזואלי מהיר של המשימה הספציפית בתוך ה-State של האב
       setTasks(prev => prev.map(t => t.id === editingTaskId ? { ...t, ...updatedTask } : t));
       
+      setMessage({ type: 'success', text: 'המשימה עודכנה בהצלחה' });
       // סגירת מצב עריכה
       setEditingTaskId(null);
     } catch (err: unknown) {
@@ -152,18 +155,20 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
-      alert(errorMessage);
+      setMessage({ type: 'error', text: errorMessage });
     } finally {
       setEditLoading(false);
     }
   };
 
   // חלוקה לוגית לפי הסטטוסים באותיות קטנות (כפי שמעודכן בשרת שלך)
-  const inProgressTasks = tasks.filter(t => t.status === 'open' || t.status === 'pending');
+  const unassignedTasks = tasks.filter(t => t.status === 'open' && !t.assignedTo);
+  const inProgressTasks = tasks.filter(t => t.status === 'pending');
   const pendingApprovalTasks = tasks.filter(t => t.status === 'submitted');
   const approvedTasks = tasks.filter(t => t.status === 'approved');
 
   const tabs = [
+    { key: 'unassigned' as TaskTab, label: '🔓 משימות פתוחות', count: unassignedTasks.length },
     { key: 'in-progress' as TaskTab, label: '⏳ משימות בתהליך', count: inProgressTasks.length },
     { key: 'pending-approval' as TaskTab, label: '🔔 מחכות לאישור', count: pendingApprovalTasks.length },
     { key: 'approved' as TaskTab, label: '✅ משימות שאושרו', count: approvedTasks.length },
@@ -178,12 +183,19 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
   }
 
   const currentTasks = 
-    activeTab === 'in-progress' ? inProgressTasks :
-    activeTab === 'pending-approval' ? pendingApprovalTasks : approvedTasks;
+  activeTab === 'unassigned' ? unassignedTasks :
+  activeTab === 'in-progress' ? inProgressTasks :
+  activeTab === 'pending-approval' ? pendingApprovalTasks : approvedTasks;
 
   return (
     <div className="bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl shadow-xl w-full" dir="rtl">
       
+      {message && (
+        <div className="mb-4">
+          <MessageBanner type={message.type} text={message.text} onDismiss={() => setMessage(null)} />
+        </div>
+      )}
+
       {/* תפריט הטאבים */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/50 pb-4 mb-6">
         <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
@@ -331,9 +343,13 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
                         {/* 🛠️ אזור הלחצנים החדש: עיפרון ופח אשפה בחלק השמאלי עליון */}
                         <div className="flex items-center gap-2">
                           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
-                            task.assignedTo ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            task.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                            task.status === 'submitted' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                            task.assignedTo ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
                           }`}>
-                            {task.assignedTo ? `👦 לביצוע: ${task.assignedTo.name}` : '🔓 פתוח לכולם'}
+                            {task.status === 'approved' ? `✅ אושר ע"י ${task.createdBy?.name || 'הורה'} (בוצע ע"י ${task.assignedTo?.name || 'צ׳אמפ'})` :
+                            task.status === 'submitted' ? `📩 הושלם ע"י ${task.assignedTo?.name || 'צ׳אמפ'}` :
+                            task.assignedTo ? `⏳ בתהליך עבודה: ${task.assignedTo.name}` : '🔓 פתוח לכולם'}
                           </span>
                           
                           {/* מותר למחוק ולערוך רק אם המשימה לא אושרה סופית */}

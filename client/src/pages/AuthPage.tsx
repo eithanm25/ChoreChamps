@@ -3,6 +3,7 @@ import type { ChangeEvent, SyntheticEvent } from 'react';
 import type { SafeUser } from '../App';
 import api from '../services/api';
 import axios from 'axios';
+import MessageBanner from '../components/MessageBanner';
 
 
 interface AuthPageProps {
@@ -22,6 +23,7 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
   const [view, setView] = useState<AuthView>(finalLoginId ? 'login' : 'signup');
 
   const [signupForm, setSignupForm] = useState({ name: '', email: '', password: '' });
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
   const [loginForm, setLoginForm] = useState({ loginId: finalLoginId, password: '' });
 
@@ -41,6 +43,7 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
     try {
       const response = await api.post('/api/auth/signup', signupForm);
       const { token, user } = response.data;
+      setMessage({ type: 'success', text: 'החשבון נוצר בהצלחה! מתחברים עכשיו...' });
       onAuth(token, user);
     } catch (err: unknown) {
       let errorMessage = 'שגיאה בתקשורת עם השרת';
@@ -49,7 +52,7 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
-      alert(errorMessage);
+      setMessage({ type: 'error', text: errorMessage });
     }
   }
 
@@ -77,6 +80,7 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
 
       const { token, user } = response.data;
       localStorage.setItem('lastLoginId', loginForm.loginId);
+      setMessage({ type: 'success', text: 'התחברות בוצעה בהצלחה' });
       onAuth(token, user);
     } catch (err: unknown) {
       let errorMessage = 'פרטי התחברות, מזהה או קוד PIN שגויים. אנא נסו שוב.';
@@ -85,7 +89,7 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
-      alert(errorMessage);
+      setMessage({ type: 'error', text: errorMessage });
     }
   }
 
@@ -142,6 +146,12 @@ export default function AuthPage({ onAuth, prefilledId = null }: AuthPageProps):
         </div>
 
         <main>
+          {message && (
+            <div className="mb-4">
+              <MessageBanner type={message.type} text={message.text} onDismiss={() => setMessage(null)} />
+            </div>
+          )}
+
           {/* טופס הרשמה הורה */}
           {view === 'signup' && (
             <form onSubmit={handleSignupSubmit} className="flex flex-col gap-4 w-full">

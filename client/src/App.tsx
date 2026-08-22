@@ -4,6 +4,7 @@ import AuthPage from './pages/AuthPage';
 import ParentOnboardingPage from './pages/ParentOnBoardingPage';
 import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
+import ChildDashboard from './pages/ChildDashboard';
 
 export type UserRole = 'parent' | 'child';
 export interface SafeUser {
@@ -122,13 +123,8 @@ export default function App(): React.ReactNode {
         <Route
           path="/child-dashboard"
           element={
-            token && user?.role === 'child' ? (
-              <div className="p-6 text-white bg-slate-900 min-h-screen text-center">
-                <h1 className="text-2xl font-bold">דשבורד ילדים (Placeholder)</h1>
-                <button onClick={handleLogout} className="mt-4 px-4 py-2 bg-red-500 rounded-full text-sm">
-                  התנתק
-                </button>
-              </div>
+            token && user?.role === 'child' && user.familyId ? (
+              <ChildDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/" replace />
             )

@@ -53,24 +53,23 @@ router.post(
     const taskRepo = AppDataSource.getRepository(Task);
     const userRepo = AppDataSource.getRepository(User);
 
-    // הגדרת ערכי ברירת מחדל למשימה פתוחה לכולם
     let taskStatus = TaskStatus.OPEN;
     let assignedChild: User | null = null;
 
-    // במידה וההורה בחר ילד ספציפי בטופס
-    if (assignedToId) {
-      const child = await userRepo.findOne({
-        where: { id: assignedToId, family: { id: parent.family.id } }
+    if (assignedToId && assignedToId.trim() !== '') {
+      const childUser = await userRepo.findOne({
+        where: { id: assignedToId, family: { id: parent.family.id } },
+        relations: ['family'],
       });
 
-      if (!child) {
+      if (!childUser) {
         res.status(404).json({ error: 'הילד שנבחר לא נמצא במשפחה זו' });
         return;
       }
 
-      // משנים את הסטטוס ל-ACCEPTED ונועלים את המשימה על הילד
+      // TaskStatus.PENDING is the equivalent of an actively-assigned task in this app.
       taskStatus = TaskStatus.PENDING;
-      assignedChild = child;
+      assignedChild = childUser;
     }
 
     const task = taskRepo.create({

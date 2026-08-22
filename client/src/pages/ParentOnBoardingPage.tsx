@@ -3,6 +3,7 @@ import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
+import MessageBanner from '../components/MessageBanner';
 
 interface OnboardingProps {
   onFamilyCreated: (user: SafeUser, token: string) => void;
@@ -12,6 +13,7 @@ interface OnboardingProps {
 export default function ParentOnboardingPage({ onFamilyCreated, onLogout }: OnboardingProps): React.ReactNode {
   const [familyName, setFamilyName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleNameChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFamilyName(e.target.value);
@@ -52,7 +54,7 @@ export default function ParentOnboardingPage({ onFamilyCreated, onLogout }: Onbo
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
-      alert(errorMessage);
+      setMessage({ type: 'error', text: errorMessage });
     } finally {
       setLoading(false);
     }
@@ -82,6 +84,12 @@ export default function ParentOnboardingPage({ onFamilyCreated, onLogout }: Onbo
 
         {/* הטופס המעוצב */}
         <main>
+          {message && (
+            <div className="mb-4">
+              <MessageBanner type={message.type} text={message.text} onDismiss={() => setMessage(null)} />
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
             <div className="flex flex-col gap-1 w-full">
               <label className="text-slate-200 text-sm font-medium">שם המשפחה / שם הקבוצה</label>
