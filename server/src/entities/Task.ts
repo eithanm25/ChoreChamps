@@ -69,7 +69,7 @@ export class Task {
   createdBy!: User;
 
   /** The child responsible for completing this task (nullable while open). */
-  @ManyToOne(() => User, (user) => user.tasks, { nullable: true })
+  @ManyToOne(() => User, (user) => user.tasks, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'assignedToId' })
   assignedTo!: User | null;
 

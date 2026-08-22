@@ -1,0 +1,428 @@
+import React, { useState, useEffect } from 'react';
+import type { ChangeEvent, SyntheticEvent } from 'react';
+import axios from 'axios';
+import api from '../services/api';
+
+// הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
+interface AiSummaryJson {
+  summary: string;
+  recommendedScore: number;
+  reasoning: string;
+}
+
+interface Submission {
+  id: string;
+  photoUrls: string[]; 
+  aiSummary: AiSummaryJson | null;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  basePrice: string | number;
+  maxBonusPrice: string | number;
+  awardedBonus: string | number | null;
+  finalScore: number | null;
+  status: 'open' | 'pending' | 'submitted' | 'approved';
+  assignedTo: { id: string; name: string } | null;
+  createdBy: { id: string; name: string } | null;
+  submission?: Submission | null;
+}
+
+interface FamilyMember {
+  id: string;
+  name: string;
+  role: 'parent' | 'child';
+}
+
+interface ParentTasksListProps {
+  tasks: Task[];
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+}
+
+type TaskTab = 'in-progress' | 'pending-approval' | 'approved';
+
+export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProps): React.ReactNode {
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TaskTab>('in-progress');
+  
+  // רשימת הילדים לצורך תיבת הבחירה בעריכה
+  const [children, setChildren] = useState<FamilyMember[]>([]);
+
+  // מצב עבור עריכת משימה (Inline Editing)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    basePrice: '',
+    maxBonusPrice: '',
+    assignedToId: ''
+  });
+  const [editLoading, setEditLoading] = useState(false);
+
+  // 1. שליפת המשימות וחברי המשפחה (בשביל הילדים ב-Select) כשהדף עולה מראש
+  useEffect(() => {
+    const initComponent = async () => {
+      try {
+        // משיכת משימות
+        const tasksRes = await api.get('/api/tasks/family-tasks');
+        setTasks(tasksRes.data.tasks || []);
+
+        // משיכת חברי משפחה כדי לסנן ילדים לעריכה
+        const membersRes = await api.get('/api/tasks/family-members');
+        const allMembers: FamilyMember[] = membersRes.data.members || [];
+        console.log("allMembers: ", allMembers);
+        setChildren(allMembers.filter((m: FamilyMember) => m.role === 'child'));
+        console.log("children: ", children);
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          console.error(err.response?.data?.error || err.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initComponent();
+  }, [setTasks]);
+
+  // 2. פונקציית מחיקת משימה חכמה (🗑️) עם עדכון ויזואלי מיידי
+  const handleDelete = async (taskId: string, taskTitle: string) => {
+    const confirmDelete = window.confirm(`האם אתם בטוחים שברצונכם לבטל ולמחוק את המשימה "${taskTitle}"?`);
+    if (!confirmDelete) return;
+
+    try {
+      await api.delete(`/api/tasks/${taskId}`);
+      
+      // עדכון מקומי מהיר (Optimistic UI Update) - המשימה נעלמת בשבריר שנייה
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } catch (err: unknown) {
+      let errorMessage = 'שגיאה במחיקת המשימה';
+      if (axios.isAxiosError(err)) {
+        errorMessage = err.response?.data?.error || err.message;
+      }
+      alert(errorMessage);
+    }
+  };
+
+  
+
+  // 3. פתיחת מצב עריכה והזנת הנתונים הקיימים לטופס
+  const startEditing = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditForm({
+      title: task.title,
+      description: task.description,
+      basePrice: String(task.basePrice),
+      maxBonusPrice: String(task.maxBonusPrice),
+      assignedToId: task.assignedTo ? task.assignedTo.id : ''
+    });
+  };
+
+  const handleEditInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setEditForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // 4. שמירת המשימה הערוכה ושליחה לשרת (PUT)
+  const handleEditSubmit = async (e: SyntheticEvent) => {
+    e.preventDefault();
+    if (!editingTaskId || !editForm.title.trim() || !editForm.basePrice || !editForm.maxBonusPrice) return;
+
+    setEditLoading(true);
+    try {
+      const response = await api.put(`/api/tasks/${editingTaskId}`, {
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        basePrice: Number(editForm.basePrice),
+        maxBonusPrice: Number(editForm.maxBonusPrice),
+        assignedToId: editForm.assignedToId || null
+      });
+
+      const updatedTask = response.data.task;
+
+      // עדכון ויזואלי מהיר של המשימה הספציפית בתוך ה-State של האב
+      setTasks(prev => prev.map(t => t.id === editingTaskId ? { ...t, ...updatedTask } : t));
+      
+      // סגירת מצב עריכה
+      setEditingTaskId(null);
+    } catch (err: unknown) {
+      let errorMessage = 'שגיאה בעדכון המשימה';
+      if (axios.isAxiosError(err)) {
+        errorMessage = err.response?.data?.error || err.message;
+      }
+      alert(errorMessage);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // חלוקה לוגית לפי הסטטוסים באותיות קטנות (כפי שמעודכן בשרת שלך)
+  const inProgressTasks = tasks.filter(t => t.status === 'open' || t.status === 'pending');
+  const pendingApprovalTasks = tasks.filter(t => t.status === 'submitted');
+  const approvedTasks = tasks.filter(t => t.status === 'approved');
+
+  const tabs = [
+    { key: 'in-progress' as TaskTab, label: '⏳ משימות בתהליך', count: inProgressTasks.length },
+    { key: 'pending-approval' as TaskTab, label: '🔔 מחכות לאישור', count: pendingApprovalTasks.length },
+    { key: 'approved' as TaskTab, label: '✅ משימות שאושרו', count: approvedTasks.length },
+  ];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-center text-slate-400 text-sm animate-pulse">
+        טוען את לוח המשימות המשפחתי...
+      </div>
+    );
+  }
+
+  const currentTasks = 
+    activeTab === 'in-progress' ? inProgressTasks :
+    activeTab === 'pending-approval' ? pendingApprovalTasks : approvedTasks;
+
+  return (
+    <div className="bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl shadow-xl w-full" dir="rtl">
+      
+      {/* תפריט הטאבים */}
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/50 pb-4 mb-6">
+        <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
+          <span>📋</span> מעקב משימות ביתיות
+        </h2>
+        
+        <nav className="bg-slate-900/60 p-1 rounded-full ring-1 ring-slate-700/60 flex gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => { setActiveTab(tab.key); setEditingTaskId(null); }}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                activeTab === tab.key ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {/* רשימת הכרטיסים */}
+      {currentTasks.length === 0 ? (
+        <div className="text-center py-8 text-slate-500 text-xs">
+          אין כרגע משימות בקטגוריה זו.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start" >
+          {currentTasks.map((task) => {
+            const isEditing = editingTaskId === task.id;
+
+            return (
+              <div 
+                key={task.id} 
+                className="p-5 rounded-2xl bg-slate-900/40 border border-slate-700/40 flex flex-col gap-3 shadow-lg justify-between"
+              >
+                {/* מצב א': כרטיס המשימה נמצא כרגע בעריכה פעילה (מציג טופס אינליין) */}
+                {isEditing ? (
+                  <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 w-full text-xs">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                      <span className="font-bold text-indigo-400">✏️ עריכת משימה</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setEditingTaskId(null)} 
+                        className="text-slate-400 hover:text-slate-200"
+                      >
+                        ביטול X
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-300 font-medium">שם המשימה</label>
+                      <input 
+                        type="text" 
+                        name="title" 
+                        value={editForm.title} 
+                        onChange={handleEditInputChange}
+                        className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 focus:outline-none"
+                        required
+                        disabled={editLoading}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-300 font-medium">תיאור</label>
+                      <textarea 
+                        name="description" 
+                        value={editForm.description} 
+                        onChange={handleEditInputChange}
+                        className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 h-16 resize-none focus:outline-none"
+                        disabled={editLoading}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-slate-300 font-medium">💰 מחיר בסיס</label>
+                        <input 
+                          type="number" 
+                          name="basePrice" 
+                          step="0.1" 
+                          value={editForm.basePrice} 
+                          onChange={handleEditInputChange}
+                          className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 focus:outline-none text-left"
+                          required
+                          disabled={editLoading}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-slate-300 font-medium">✨ בונוס גג</label>
+                        <input 
+                          type="number" 
+                          name="maxBonusPrice" 
+                          step="0.1" 
+                          value={editForm.maxBonusPrice} 
+                          onChange={handleEditInputChange}
+                          className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 text-left focus:outline-none"
+                          required
+                          disabled={editLoading}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-300 font-medium">🎯 שיוך לילד</label>
+                      <select 
+                        name="assignedToId" 
+                        value={editForm.assignedToId} 
+                        onChange={handleEditInputChange}
+                        className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 focus:outline-none font-medium"
+                        disabled={editLoading}
+                      >
+                        <option value="">🔓 פתוח לכולם — כל הקודם זוכה!</option>
+                        {children.map(c => (
+                          <option key={c.id} value={c.id}>👦 {c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      disabled={editLoading}
+                      className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold text-white shadow-md hover:from-emerald-600 transition-all mt-2"
+                    >
+                      {editLoading ? 'שומר שינויים...' : 'שמור עדכון משימה'}
+                    </button>
+                  </form>
+                ) : (
+                  
+                  // מצב ב': כרטיס המשימה הסטטי הרגיל (כולל שני הלחצנים החדשים)
+                  <>
+
+                    <div className="flex flex-col gap-2">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex flex-col gap-0.5">
+                          <h3 className="font-bold text-white text-base airy-headline leading-tight">{task.title}</h3>
+                          {task.createdBy && (
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              👑 פורסם על ידי: <span className="text-slate-300 font-semibold">{task.createdBy.name}</span>
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* 🛠️ אזור הלחצנים החדש: עיפרון ופח אשפה בחלק השמאלי עליון */}
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                            task.assignedTo ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {task.assignedTo ? `👦 לביצוע: ${task.assignedTo.name}` : '🔓 פתוח לכולם'}
+                          </span>
+                          
+                          {/* מותר למחוק ולערוך רק אם המשימה לא אושרה סופית */}
+                          {task.status !== 'approved' && (
+                            <div className="flex gap-2 border-r border-slate-700/60 pr-2 mr-1">
+                              <button 
+                                type="button"
+                                onClick={() => startEditing(task)}
+                                title="ערוך משימה" 
+                                className="text-xs opacity-60 hover:opacity-100 hover:scale-110 transition-all"
+                              >
+                                ✏️
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => handleDelete(task.id, task.title)}
+                                title="מחק משימה" 
+                                className="text-xs opacity-60 hover:opacity-100 hover:scale-110 transition-all text-red-400"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {task.description && (
+                        <p className="text-slate-400 text-xs leading-relaxed mt-1">{task.description}</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-4 text-xs font-semibold py-2 border-t border-b border-slate-800/80 my-1">
+                      <span className="text-emerald-400">💰 בסיס: {Number(task.basePrice)} ₪</span>
+                      <span className="text-purple-400">✨ בונוס גג: {Number(task.maxBonusPrice)} ₪</span>
+                    </div>
+
+                    {/* === טאב מחכות לאישור === */}
+                    {activeTab === 'pending-approval' && task.submission && (
+                      <div className="flex flex-col gap-3 pt-2 bg-slate-900/40 p-3 rounded-xl ring-1 ring-slate-700/30">
+                        {task.submission.photoUrls && task.submission.photoUrls.length > 0 && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-slate-400 font-medium">📸 הוכחות ויזואליות מהילד:</span>
+                            <div className="flex gap-2 overflow-x-auto py-1">
+                              {task.submission.photoUrls.map((url, idx) => (
+                                <img key={idx} src={url} alt="הוכחה" className="w-20 h-20 object-cover rounded-lg border border-slate-700" />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {task.submission.aiSummary && (
+                          <div className="flex flex-col gap-2 pt-2 border-t border-slate-800 text-right">
+                            <span className="text-indigo-400 font-bold flex items-center gap-1 text-[11px]">🤖 המלצת ה-AI:</span>
+                            <div className="bg-slate-950/50 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+                              <div className="text-[11px] font-bold text-indigo-300 bg-indigo-500/5 border border-indigo-500/10 px-2 py-1 rounded-md w-fit">
+                                🎯 ציון מומלץ: {task.submission.aiSummary.recommendedScore}/100
+                              </div>
+                              <p className="text-slate-300 text-[11px] leading-relaxed"><strong className="text-slate-400 block mb-0.5">🧐 נימוק:</strong>{task.submission.aiSummary.reasoning}</p>
+                              <p className="text-slate-400 text-[10px] italic border-t border-slate-800/60 pt-1.5 mt-0.5">"משוב: {task.submission.aiSummary.summary}"</p>
+                            </div>
+                          </div>
+                        )}
+                        <button className="w-full py-1.5 mt-1 rounded-lg bg-emerald-500 text-white font-bold text-xs shadow-md hover:bg-emerald-600 transition-all">
+                          🔎 לחץ לבדיקה ומתן ציון
+                        </button>
+                      </div>
+                    )}
+
+                    {/* === טאב משימות שאושרו === */}
+                    {activeTab === 'approved' && (
+                      <div className="flex flex-col gap-2 pt-2 bg-slate-900/20 p-3 rounded-xl ring-1 ring-slate-800">
+                        <div className="grid grid-cols-2 gap-2 text-xs font-bold text-center">
+                          <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 p-2 rounded-lg">🎯 ציון איכות: {task.finalScore}/100</div>
+                          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-2 rounded-lg">🎁 בונוס שניתן: {Number(task.awardedBonus || 0).toFixed(2)} ₪</div>
+                        </div>
+                        {task.submission?.aiSummary && (
+                          <div className="flex flex-col gap-1 text-[11px] leading-normal pt-2 border-t border-slate-800 text-slate-400">
+                            <span className="font-semibold text-slate-500">🤖 משוב ה-AI שנשמר:</span>
+                            <p className="italic text-slate-400 font-medium">"{task.submission.aiSummary.summary}"</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

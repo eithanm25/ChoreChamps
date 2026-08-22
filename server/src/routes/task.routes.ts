@@ -26,11 +26,12 @@ router.post(
   requireAuth,
   requireParent,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { title, description, basePrice, maxBonusPrice } = req.body as {
+    const { title, description, basePrice, maxBonusPrice, assignedToId } = req.body as {
       title?: string;
       description?: string;
       basePrice?: unknown;
       maxBonusPrice?: unknown;
+      assignedToId?: string | null; // חילוץ השדה החדש מהבקשה
     };
 
     if (!title || typeof title !== 'string') {
@@ -50,14 +51,37 @@ router.post(
     }
 
     const taskRepo = AppDataSource.getRepository(Task);
+    const userRepo = AppDataSource.getRepository(User);
+
+    // הגדרת ערכי ברירת מחדל למשימה פתוחה לכולם
+    let taskStatus = TaskStatus.OPEN;
+    let assignedChild: User | null = null;
+
+    // במידה וההורה בחר ילד ספציפי בטופס
+    if (assignedToId) {
+      const child = await userRepo.findOne({
+        where: { id: assignedToId, family: { id: parent.family.id } }
+      });
+
+      if (!child) {
+        res.status(404).json({ error: 'הילד שנבחר לא נמצא במשפחה זו' });
+        return;
+      }
+
+      // משנים את הסטטוס ל-ACCEPTED ונועלים את המשימה על הילד
+      taskStatus = TaskStatus.PENDING;
+      assignedChild = child;
+    }
+
     const task = taskRepo.create({
       title,
       description: description ?? '',
       basePrice: basePrice.toFixed(2),
       maxBonusPrice: maxBonusPrice.toFixed(2),
-      status: TaskStatus.OPEN,
+      status: taskStatus,
       family: parent.family,
       createdBy: parent,
+      assignedTo: assignedChild,
     });
 
     await taskRepo.save(task);
@@ -65,6 +89,7 @@ router.post(
     res.status(201).json({ task });
   },
 );
+
 
 /**
  * GET /api/tasks/open
@@ -515,8 +540,13 @@ router.post(
           .createQueryBuilder()
           .update(ChildProfile)
           .set({
+            // הנתונים החודשיים (המתאפסים ב-Leaderboard)
             balance: () => '"balance" + CAST(:totalPayout AS numeric)',
             totalBonusEarned: () => '"totalBonusEarned" + CAST(:awardedBonus AS numeric)',
+            
+            // 🔥 שני השדות ההיסטוריים החדשים (שנשמרים מאז ומעולם לתעודת הזהות של הילד)
+            lifetimeTasksCount: () => '"lifetimeTasksCount" + 1', // מקפיץ ב-1 את כמות המשימות שביצע
+            lifetimeEarnings: () => '"lifetimeEarnings" + CAST(:totalPayout AS numeric)', // מוסיף את סך הרווח לתמיד
           })
           .where('id = :childId', { childId })
           .setParameters({ totalPayout, awardedBonus })
@@ -588,5 +618,120 @@ async function deleteLocalPhotos(photoUrls: string[]): Promise<void> {
     }),
   );
 }
+
+// 1. ראוט מחיקת משימה (רק להורים של אותה משפחה)
+router.delete(
+  '/:id',
+  requireAuth,
+  requireParent,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const id = req.params.id as string;
+    const parent = req.user!;
+
+    try {
+      const taskRepo = AppDataSource.getRepository(Task);
+      
+      // מוודאים שהמשימה קיימת ושייכת למשפחה של ההורה המבקש
+      const task = await taskRepo.findOne({
+        where: { id, family: { id: parent.family?.id } }
+      });
+
+      if (!task) {
+        res.status(404).json({ error: 'המשימה לא נמצאה או שאינה שייכת למשפחתך' });
+        return;
+      }
+
+      // מותר למחוק משימה רק אם היא עדיין לא פורסמה/אושרה סופית (רק open, accepted או submitted)
+      if (task.status === TaskStatus.APPROVED) {
+        res.status(400).json({ error: 'לא ניתן למחוק משימה שכבר אושרה והועבר עליה תשלום' });
+        return;
+      }
+
+      await taskRepo.remove(task);
+      res.json({ message: 'המשימה נמחקה בהצלחה' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// 2. ראוט עדכון ועריכת משימה
+router.put(
+  '/:id',
+  requireAuth,
+  requireParent,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const id = req.params.id as string;
+    const parent = req.user!;
+    const { title, description, basePrice, maxBonusPrice, assignedToId } = req.body as {
+      title?: string;
+      description?: string;
+      basePrice?: number;
+      maxBonusPrice?: number;
+      assignedToId?: string | null;
+    };
+
+    try {
+      const taskRepo = AppDataSource.getRepository(Task);
+      const userRepo = AppDataSource.getRepository(User);
+
+      // שליפת המשימה עם וידוא משפחה
+      const task = await taskRepo.findOne({
+        where: { id, family: { id: parent.family?.id } },
+        relations: ['assignedTo']
+      });
+
+      if (!task) {
+        res.status(404).json({ error: 'המשימה לא נמצאה' });
+        return;
+      }
+
+      if (task.status === TaskStatus.APPROVED) {
+        res.status(400).json({ error: 'לא ניתן לערוך משימה שכבר אושרה ונסגרה' });
+        return;
+      }
+
+      // עדכון שדות טקסט אם נשלחו
+      if (title && typeof title === 'string') task.title = title.trim();
+      if (description !== undefined) task.description = description.trim();
+      
+      // עדכון שדות כסף (ממירים לסטרינג קבוע עם 2 ספרות אחרי הנקודה)
+      if (typeof basePrice === 'number') task.basePrice = basePrice.toFixed(2);
+      if (typeof maxBonusPrice === 'number') task.maxBonusPrice = maxBonusPrice.toFixed(2);
+
+      // לוגיקת שיוך דינמית ומורכבת
+      if (assignedToId !== undefined) {
+        if (assignedToId === null || assignedToId === '') {
+          // אם ההורה החזיר את המשימה למצב "פתוח לכולם"
+          task.assignedTo = null;
+          // אם הסטטוס היה תפוס, מחזירים אותו לפתוח
+          if (task.status === TaskStatus.PENDING) {
+            task.status = TaskStatus.OPEN;
+          }
+        } else {
+          // שיוך לילד חדש/אחר
+          const child = await userRepo.findOne({
+            where: { id: assignedToId, family: { id: parent.family?.id } }
+          });
+          if (!child) {
+            res.status(404).json({ error: 'הילד המבוקש לא נמצא במשפחה זו' });
+            return;
+          }
+          task.assignedTo = child;
+          // אם המשימה הייתה פתוחה באוויר, היא הופכת לתפוסה עבורו
+          if (task.status === TaskStatus.OPEN) {
+            task.status = TaskStatus.PENDING;
+          }
+        }
+      }
+
+      await taskRepo.save(task);
+      res.json({ task });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 
 export default router;

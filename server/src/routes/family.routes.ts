@@ -10,6 +10,8 @@ import {
 } from '../middleware/auth';
 import { generateInviteCode, hashPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
+import { Task, TaskStatus } from '../entities/Task';
+import { In } from 'typeorm';
 
 const router = Router();
 
@@ -178,5 +180,60 @@ router.post(
     });
   },
 );
+
+// ראוט מחיקת בן משפחה (הורה נוסף או ילד) מהקבוצה
+router.delete(
+  '/member/:id',
+  requireAuth,
+  requireParent,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const memberId = req.params.id as string;
+    const parent = req.user!;
+
+    // הגנה 1: מניעת התאבדות של מנהל המערכת - אסור להורה למחוק את עצמו!
+    if (memberId === parent.id) {
+      res.status(400).json({ error: 'אינך יכול למחוק את עצמך מהקבוצה המשפחתית' });
+      return;
+    }
+
+    try {
+        
+      const userRepo = AppDataSource.getRepository(User);
+      const taskRepo = AppDataSource.getRepository(Task);
+      
+      const memberToDelete = await userRepo.findOne({
+        where: { id: memberId, family: { id: parent.family?.id } }
+      });
+
+      if (!memberToDelete) {
+        res.status(404).json({ error: 'בן המשפחה לא נמצא או שאינו שייך לקבוצה שלך' });
+        return;
+      }
+
+      // 🔥 שלב א': טיפול חכם במשימות המשויכות לילד לפני מחיקתו!
+      if (memberToDelete.role === 'child') {
+        // 1. משימות פתוחות/בתהליך -> מנתקים מהילד ומחזירים למצב פתוח לכולם
+        await taskRepo.update(
+          { assignedTo: { id: memberId }, status: In([TaskStatus.OPEN, TaskStatus.PENDING, TaskStatus.COMPLETED]) } as any,
+          { assignedTo: null, status: TaskStatus.OPEN }
+        );
+
+        await taskRepo.update(
+          { assignedTo: { id: memberId }, status: TaskStatus.APPROVED },
+          { assignedTo: null } 
+        );
+      }
+
+      // שלב ב': עכשיו מותר למחוק את המשתמש בבטחה מלאה מהדאטהבייס!
+      await userRepo.remove(memberToDelete);
+      
+      res.json({ message: 'בן המשפחה הוסר בהצלחה, והמשימות שלו טופלו בהתאם' });
+
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 
 export default router;
