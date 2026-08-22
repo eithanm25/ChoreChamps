@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { SyntheticEvent } from 'react';
+import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
@@ -52,11 +52,12 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
   // סטייט להגשת מטלה
   const [submittingTaskId, setSubmittingTaskId] = useState<string | null>(null);
   const [proofDescription, setProofDescription] = useState('');
-  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
+  const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // סטייט לצפייה באחים
@@ -93,11 +94,32 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     fetchDashboardData();
   }, []);
 
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files);
+      
+      // שומרים את הקבצים האמיתיים בסטייט
+      setSelectedPhotos(prev => [...prev, ...filesArray]);
+      
+      // מייצרים כתובות אינטרנט זמניות בדפדפן רק בשביל ה-Preview הויזואלי
+      const newPreviews = filesArray.map(file => URL.createObjectURL(file));
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+    }
+  };
+
+  const removePhoto = (indexToRemove: number) => {
+    setSelectedPhotos(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    // מנקים גם את ה-Preview הזמני מהזיכרון של הדפדפן כדי למנוע זליגת זיכרון
+    URL.revokeObjectURL(previewUrls[indexToRemove]);
+    setPreviewUrls(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+
   // חטיפת משימה פתוחה (⚡)
   const handleAcceptTask = async (taskId: string) => {
     setActionLoading(true);
     try {
-      await api.post(`/api/tasks/accept/${taskId}`);
+      await api.post(`/api/tasks/${taskId}/accept`);
       setMessage({ type: 'success', text: 'המשימה נלקחה בהצלחה! 🎯' });
       await fetchDashboardData();
     } catch (err: unknown) {
@@ -110,29 +132,62 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   };
 
   // שליחת המשימה להורים עם הוכחה (📸)
+    // שליחת המשימה להורים - גרסת ה-Production האמיתית והמאובטחת עם קבצי מצלמה!
   const handleSendToParents = async (e: SyntheticEvent) => {
     e.preventDefault();
-    if (!submittingTaskId) return;
+    if (actionLoading || !submittingTaskId || selectedPhotos.length === 0) return;
+
+    const taskTitle = tasks.find((task) => task.id === submittingTaskId)?.title || 'המשימה';
+
     setActionLoading(true);
     try {
-      const mockPhotoUrls = selectedPhotos.length > 0 ? selectedPhotos : ["https://unsplash.com"];
-      
-      await api.post(`/api/tasks/${submittingTaskId}/submit`, {
-        photoUrls: mockPhotoUrls,
-        childNotes: proofDescription.trim()
+      const formData = new FormData();
+      formData.append('childNotes', proofDescription.trim());
+      selectedPhotos.forEach((file) => {
+        formData.append('photos', file);
       });
+
+      const response = await api.post(`/api/tasks/${submittingTaskId}/submit`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const taskResponse = response.data?.task;
+
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === submittingTaskId
+            ? {
+                ...task,
+                status: taskResponse?.status ?? 'completed',
+                submission: response.data?.submission ?? task.submission,
+              }
+            : task,
+        ),
+      );
 
       setSubmittingTaskId(null);
       setProofDescription('');
       setSelectedPhotos([]);
+      setPreviewUrls([]);
       await fetchDashboardData();
-      setMessage({ type: 'success', text: 'המשימה נשלחה בהצלחה לאישור ההורים! ה-AI מנתח אותה כעת 🤖✨' });
+
+      setMessage({
+        type: 'success',
+        text: `✅ ${taskTitle} נשלחה להורים והצטרפה למעקב האישור שלהם!`,
+      });
     } catch (err: unknown) {
-      setMessage({ type: 'error', text: 'שגיאה בשליחת המשימה להורים' + (axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'שגיאה לא ידועה') });
+      let errorText = 'שגיאה בשליחת המשימה להורים';
+      if (axios.isAxiosError(err)) {
+        errorText = err.response?.data?.error || err.message;
+      }
+      setMessage({ type: 'error', text: errorText });
     } finally {
       setActionLoading(false);
     }
   };
+
 
   const currentChildProfile = members.find(m => m.id === user.id);
   const currentBalance = currentChildProfile?.lifetimeEarnings || 0;
@@ -157,7 +212,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         {/* ראש דף משחקי */}
         <header className="bg-slate-800/50 border border-slate-700/50 p-5 rounded-2xl flex justify-between items-center shadow-xl">
           <div>
-            <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">שלום השמפיון {user.name}! 💪</h1>
+            <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">שלום הצ'מפיון {user.name}! 💪</h1>
             <p className="text-slate-400 text-xs mt-0.5">כל משימה שתבצע מקדמת אותך לפרסים הגדולים</p>
           </div>
           <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
@@ -167,7 +222,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 p-5 rounded-2xl shadow-xl flex items-center gap-4 relative overflow-hidden">
           <div className="text-3xl animate-bounce">🪙</div>
           <div>
-            <span className="text-slate-400 text-xs font-bold block">קופת החיסכון שלי מאז ומעולם:</span>
+            <span className="text-slate-400 text-xs font-bold block">כסף שצברתי עד כה:</span>
             <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalance} ₪</span>
           </div>
         </div>
@@ -234,19 +289,74 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                     </div>
                   )}
 
-                  {submittingTaskId === myActiveTask.id && (
-                    <form onSubmit={handleSendToParents} className="bg-slate-900/60 p-4 border border-slate-800 rounded-xl flex flex-col gap-3 text-xs">
-                      <span className="font-bold text-emerald-400">📸 צילום הוכחה וכתיבת משוב להורים</span>
+                                    {submittingTaskId === myActiveTask.id && (
+                    <form onSubmit={handleSendToParents} className="bg-slate-900/60 p-4 border border-slate-800 rounded-xl flex flex-col gap-4 text-xs animate-fade-in text-right">
+                      <span className="font-bold text-emerald-400 flex items-center gap-1">
+                        <span>📸</span> צילום הוכחה לביצוע המשימה
+                      </span>
+                      
+                      {/* כפתור המצלמה/העלאה המעוצב לנייד */}
+                      <div className="flex flex-col gap-2">
+                        <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold">
+                          <span>📷</span> {selectedPhotos.length > 0 ? 'צלם/הוסף עוד תמונה' : 'לחץ כאן כדי לצלם את העבודה'}
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            onChange={handlePhotoChange} 
+                            className="hidden" // מחביאים את האינפוט המכוער של הדפדפן
+                            disabled={actionLoading}
+                          />
+                        </label>
+                      </div>
+
+                      {/* 🖼️ תצוגה מקדימה (Preview) של התמונות שהילד צילם כולל כפתור מחיקה קטן */}
+                      {previewUrls.length > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-slate-400 text-[10px]">התמונות שנבחרו לשליחה:</span>
+                          <div className="flex gap-2 overflow-x-auto py-1">
+                            {previewUrls.map((base64Str, idx) => (
+                              <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
+                                <img src={base64Str} alt="תצוגה מקדימה" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
+                                <button
+                                  type="button"
+                                  onClick={() => removePhoto(idx)}
+                                  className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[9px] font-black shadow-md cursor-pointer select-none"
+                                  title="מחק תמונה"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex flex-col gap-1">
                         <label className="text-slate-400 font-medium">הערות להורים (אופציונלי):</label>
-                        <textarea value={proofDescription} onChange={(e) => setProofDescription(e.target.value)} placeholder="הסבר קצר לילדים..." className="w-full h-16 p-2 bg-slate-800 rounded-lg text-white resize-none" />
+                        <textarea 
+                          value={proofDescription} 
+                          onChange={(e) => setProofDescription(e.target.value)} 
+                          placeholder="רוצים לספר להורים משהו על המשימה? (לדוגמה: ניקיתי ממש טוב וגם ריססתי מטהר אוויר!)" 
+                          className="w-full h-16 p-2 bg-slate-800 rounded-lg text-white resize-none border border-slate-700 focus:outline-none focus:border-indigo-500" 
+                          disabled={actionLoading}
+                        />
                       </div>
-                      <div className="flex gap-2 justify-end mt-2">
-                        <button type="button" onClick={() => setSubmittingTaskId(null)} className="px-4 py-1.5 bg-slate-800 text-slate-300 rounded-lg font-bold">ביטול</button>
-                        <button type="submit" disabled={actionLoading} className="px-5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-white rounded-lg shadow-md disabled:opacity-40">שלח להורים! 🚀</button>
+                      
+                      {/* 🔥 כפתור הגשה סופי - כעת הוא DISABLED לחלוטין כל עוד אין לפחות תמונה אחת! */}
+                      <div className="flex gap-2 justify-end mt-1 border-t border-slate-800/80 pt-3">
+                        <button type="button" onClick={() => { setSubmittingTaskId(null); setSelectedPhotos([]); setProofDescription(''); }} className="px-4 py-1.5 bg-slate-800 text-slate-300 rounded-lg font-bold">ביטול</button>
+                        <button 
+                          type="submit" 
+                          disabled={actionLoading || selectedPhotos.length === 0} // הנעילה שביקשת!
+                          className="px-5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-white rounded-lg shadow-md hover:from-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          {actionLoading ? 'מעלה משימה...' : 'שלח להורים! 🚀'}
+                        </button>
                       </div>
                     </form>
                   )}
+
                 </div>
               )}
             </section>

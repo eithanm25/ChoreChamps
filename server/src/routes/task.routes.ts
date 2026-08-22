@@ -14,6 +14,21 @@ import {
 import { canAcceptTask, canCancelSubmission } from '../services/taskGuardrails';
 import { reviewChorePhoto } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
+import multer from 'multer';
+import path from 'path';
+
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, '../../uploads')); 
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage });
 
 const router = Router();
 
@@ -345,95 +360,101 @@ router.post(
   '/:taskId/submit',
   requireAuth,
   requireChild,
+  upload.array('photos', 5), // 🔥 המידלוור של מאלטר שתופס את קבצי המצלמה האמיתיים מהנייד!
   async (req: AuthenticatedRequest, res: Response) => {
     const taskId = req.params.taskId as string;
     const child = req.user!;
-    const { photoUrl } = req.body as { photoUrl?: string };
+    const { childNotes } = req.body as { childNotes?: string };
 
-    if (!photoUrl) {
-      res.status(400).json({ error: 'photoUrl is required' });
-      return;
-    }
-
-    const absolutePath = resolveUploadPath(photoUrl);
-    if (!absolutePath) {
-      res.status(400).json({ error: 'photoUrl must be a file inside the uploads directory' });
+    // וידוא שהועלו קבצים
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'חובה לצלם או להעלות לפחות תמונה אחת של המשימה' });
       return;
     }
 
     const taskRepo = AppDataSource.getRepository(Task);
     const submissionRepo = AppDataSource.getRepository(Submission);
 
-    const task = await taskRepo.findOne({
-      where: { id: taskId },
-      relations: ['family', 'assignedTo', 'submission'],
-    });
+    let outcome: {
+      task: Task;
+      submission: Submission;
+    };
 
-    if (!task) {
-      res.status(404).json({ error: 'Task not found' });
-      return;
-    }
-
-    if (task.assignedTo?.id !== child.id) {
-      res.status(403).json({ error: 'You are not assigned to this task' });
-      return;
-    }
-
-    if (task.status !== TaskStatus.PENDING) {
-      res.status(409).json({ error: 'Only a pending task can be submitted' });
-      return;
-    }
-
-    if (task.submission) {
-      res.status(409).json({ error: 'This task already has a submission' });
-      return;
-    }
-
-    // Fail loudly on a missing photo rather than silently producing no review.
     try {
-      const stats = await stat(absolutePath);
-      if (!stats.isFile()) {
-        res.status(400).json({ error: 'photoUrl does not point to a file' });
-        return;
-      }
-    } catch {
-      res.status(400).json({ error: 'Photo not found in the uploads directory' });
+      outcome = await AppDataSource.transaction(async (manager) => {
+        const txTaskRepo = manager.getRepository(Task);
+        const txSubmissionRepo = manager.getRepository(Submission);
+
+        const task = await txTaskRepo.findOne({
+          where: { id: taskId },
+          relations: ['family', 'assignedTo', 'submission'],
+        });
+
+        if (!task) {
+          throw Object.assign(new Error('המשימה לא נמצאה'), { statusCode: 404 });
+        }
+
+        if (task.assignedTo?.id !== child.id) {
+          throw Object.assign(new Error('אינך משויך למשימה זו'), { statusCode: 403 });
+        }
+
+        if (task.status !== TaskStatus.PENDING) {
+          throw Object.assign(new Error('המשימה אינה במצב של הגשה פעילה ולכן לא ניתן לשלוח אותה שוב'), { statusCode: 409 });
+        }
+
+        if (task.submission) {
+          throw Object.assign(new Error('למשימה זו כבר הוגשה הוכחה בעבר'), { statusCode: 409 });
+        }
+
+        const savedPhotoNames = files.map((file) => file.filename);
+        const firstFileAbsolutePath = files[0].path;
+
+        let aiSummary = null;
+        try {
+          aiSummary = await reviewChorePhoto({
+            absolutePath: firstFileAbsolutePath,
+            title: task.title,
+            description: task.description,
+          });
+        } catch (aiErr) {
+          console.error('שגיאה זמנית בפנייה ל-Claude AI, ממשיך שמירה ללא ניתוח:', aiErr);
+        }
+
+        const submission = txSubmissionRepo.create({
+          task,
+          childId: child.id,
+          photoUrls: savedPhotoNames,
+          aiSummary,
+        });
+        await txSubmissionRepo.save(submission);
+
+        task.status = TaskStatus.COMPLETED;
+        await txTaskRepo.save(task);
+
+        return { task, submission };
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'שגיאה בשליחת המשימה להורים';
+      const status = typeof (err as { statusCode?: number }).statusCode === 'number'
+        ? (err as { statusCode: number }).statusCode
+        : 500;
+
+      res.status(status).json({ error: message });
       return;
     }
-
-    const aiSummary = await reviewChorePhoto({
-      absolutePath,
-      title: task.title,
-      description: task.description,
-    });
-
-    const submission = submissionRepo.create({
-      taskId: task.id,
-      childId: child.id,
-      photoUrls: [photoUrl],
-      aiSummary,
-    });
-    await submissionRepo.save(submission);
-
-    task.status = TaskStatus.COMPLETED;
-    await taskRepo.save(task);
 
     res.status(201).json({
-      task: {
-        id: task.id,
-        title: task.title,
-        status: task.status,
-      },
+      task: { id: outcome.task.id, title: outcome.task.title, status: outcome.task.status },
       submission: {
-        id: submission.id,
-        photoUrls: submission.photoUrls,
-        aiSummary: submission.aiSummary,
-        submittedAt: submission.submittedAt,
-      },
-      aiReviewAvailable: aiSummary !== null,
+        id: outcome.submission.id,
+        photoUrls: outcome.submission.photoUrls,
+        aiSummary: outcome.submission.aiSummary,
+      }
     });
   },
 );
+
 
 /**
  * POST /api/tasks/:taskId/approve
