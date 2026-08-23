@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { AppDataSource } from '../data-source';
+import { Family } from '../entities/Family';
 import { User, UserRole } from '../entities/User';
 import { hashPassword, verifyPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
@@ -102,6 +103,7 @@ router.post('/login', async (req, res: Response) => {
       email: user.email,
       role: user.role,
       familyId: user.family?.id ?? null,
+      familyCode: user.family?.familyCode ?? null,
     },
     token,
   });
@@ -109,20 +111,40 @@ router.post('/login', async (req, res: Response) => {
 
 /**
  * POST /api/auth/profile-login
- * userId + password login for children and other profiles created in-app by a
- * parent, which have no email to log in with.
+ * familyCode + username + password login for children and other profiles
+ * created in-app by a parent, which have no email to log in with.
+ *
+ * Device-agnostic by design: unlike a saved link keyed to a UUID, a household
+ * code + name works from any device — a friend's phone, a school computer,
+ * a new tablet — as long as the child remembers their family's code and name.
+ *
+ * Errors are deliberately generic ("Invalid credentials") regardless of
+ * whether the family code, username, or password was wrong, to avoid leaking
+ * which part of the input was incorrect.
  */
 router.post('/profile-login', async (req, res: Response) => {
-  const { userId, password } = req.body as { userId?: string; password?: string };
+  const { familyCode, username, password } = req.body as {
+    familyCode?: string;
+    username?: string;
+    password?: string;
+  };
 
-  if (!userId) {
-    res.status(400).json({ error: 'userId is required' });
+  if (!familyCode?.trim() || !username?.trim()) {
+    res.status(400).json({ error: 'familyCode and username are required' });
+    return;
+  }
+
+  const familyRepo = AppDataSource.getRepository(Family);
+  const family = await familyRepo.findOne({ where: { familyCode: familyCode.trim() } });
+
+  if (!family) {
+    res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOne({
-    where: { id: userId },
+    where: { name: username.trim(), family: { id: family.id } },
     relations: ['family'],
   });
 
@@ -148,6 +170,7 @@ router.post('/profile-login', async (req, res: Response) => {
       name: user.name,
       role: user.role,
       familyId: user.family?.id ?? null,
+      familyCode: family.familyCode,
     },
     token,
   });

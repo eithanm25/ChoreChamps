@@ -5,6 +5,7 @@ import api from '../services/api';
 import type { SafeUser } from '../App';
 import ParentTasksList, { type Task } from '../components/ParentTasksList';
 import MessageBanner from '../components/MessageBanner';
+import { usePolling } from '../hooks/usePolling';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -40,34 +41,43 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   // תופס את שם/תפקיד החבר שנוצר ברגע היצירה, כדי שכפתור השיתוף לא יקרא בטעות
   // מה-form החי (שכבר התאפס לאחר ההצלחה, ועלול היה גם להשתנות בין ההוספה לשיתוף)
   const [lastCreatedMember, setLastCreatedMember] = useState<{ name: string; role: 'parent' | 'child' } | null>(null);
+  // מוצג בכותרת הדשבורד — נטען מחדש מהשרת (לא רק מ-user בזיכרון) כדי לעבוד נכון
+  // גם אחרי רענון עמוד או עבור הורה נוסף שהצטרף בלי לעבור דרך יצירת המשפחה
+  const [familyCode, setFamilyCode] = useState<string | null>(user.familyCode ?? null);
 
 
   // שליפת חברי המשפחה מהשרת
-  useEffect(() => {
-    const fetchFamilyMembers = async () => {
-      try {
-        const response = await api.get('/api/tasks/family-members');
-        setMembers(response.data.members || []);
-      } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          console.error(err.response?.data?.error || err.message);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFamilyMembers();
-  }, []);
-
   const refreshMembers = async () => {
     try {
       const response = await api.get('/api/tasks/family-members');
       setMembers(response.data.members || []);
     } catch (err: unknown) {
-      console.error(err);
+      if (axios.isAxiosError(err)) {
+        console.error(err.response?.data?.error || err.message);
+      }
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const loadInitialMembers = async () => {
+      await refreshMembers();
+      try {
+        const familyRes = await api.get('/api/family/me');
+        setFamilyCode(familyRes.data.family?.familyCode ?? null);
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          console.error(err.response?.data?.error || err.message);
+        }
+      }
+    };
+    loadInitialMembers();
+  }, []);
+
+  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שהוספת/מחיקת בן משפחה
+  // מבוצעת בסשן אחר תופיע כאן בלי רענון ידני
+  usePolling(refreshMembers);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -193,7 +203,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
     // הטקסט המעוצב והחם שהמשפחה תקבל בוואטסאפ או במייל
     const shareData = {
       title: `הצטרפות לאפליקציית ChoreChamps 🏆`,
-      text: `היי ${memberName}, פתחתי לך חשבון מסוג ${roleText}.\nהצטרפו למשפחת ${familyName} והתחילו ליהנות מ-ChoreChamps! 🏆✨\n\nהמזהה שלך כבר מחכה בפנים, רק כנסו והקישו את ה-PIN שקבענו:\n`,
+      text: `היי ${memberName}, פתחתי לך חשבון מסוג ${roleText}.\nהצטרפו למשפחת ${familyName} והתחילו ליהנות מ-ChoreChamps! 🏆✨\n\nקוד המשפחה והשם שלכם כבר ממולאים בקישור, רק הקישו את ה-PIN שקבענו. עובד מכל מכשיר, גם אם תשכחו את הקישור אפשר תמיד להיכנס עם קוד המשפחה 🆔${familyCode ? ` (${familyCode})` : ''} והשם שלכם:\n`,
       url: link // הקישור הקצר והחכם שלכם
     };
 
@@ -246,9 +256,14 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
               משפחת {familyName} — מרכז בקרה להורים 🚀
             </h1>
             <p className="text-slate-400 text-xs mt-1">שלום {user.name}, כאן תוכל לנהל משימות, לעקוב אחר התקדמות הילדים ולחלק דמי כיס חכמים</p>
+            {familyCode && (
+              <p className="mt-2 inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold px-3 py-1.5 rounded-full">
+                🆔 קוד המשפחה שלכם להתחברות: <span className="font-mono tracking-widest text-sm text-emerald-200">{familyCode}</span>
+              </p>
+            )}
           </div>
-          <button 
-            onClick={onLogout} 
+          <button
+            onClick={onLogout}
             className="px-5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-sm font-bold transition-all shadow-lg"
           >
             התנתק מהחשבון

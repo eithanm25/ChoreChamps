@@ -2,6 +2,10 @@ import { createHmac } from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'chorechamps-dev-secret-change-in-production';
 
+/** Sessions expire after 30 days — long enough for a household app, but bounded
+ * so a lost/stolen device or a stale browser session doesn't stay valid forever. */
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface AuthTokenPayload {
   userId: string;
   role: string;
@@ -25,6 +29,7 @@ export function signToken(payload: AuthTokenPayload): string {
     JSON.stringify({
       ...payload,
       iat: Date.now(),
+      exp: Date.now() + TOKEN_TTL_MS,
     }),
   );
   const signature = createHmac('sha256', JWT_SECRET)
@@ -50,8 +55,14 @@ export function verifyToken(token: string): AuthTokenPayload | null {
   }
 
   try {
-    const parsed = JSON.parse(base64UrlDecode(body)) as AuthTokenPayload & { iat?: number };
+    const parsed = JSON.parse(base64UrlDecode(body)) as AuthTokenPayload & {
+      iat?: number;
+      exp?: number;
+    };
     if (!parsed.userId || !parsed.role) {
+      return null;
+    }
+    if (typeof parsed.exp === 'number' && Date.now() > parsed.exp) {
       return null;
     }
     return {

@@ -30,6 +30,15 @@ export class Family {
   @Column({ type: 'varchar', length: 32, unique: true, nullable: true })
   childInviteCode!: string | null;
 
+  /**
+   * Human-memorable household code (4–6 digits) used for device-agnostic login:
+   * any family member can log in from any device with familyCode + their name +
+   * their password/PIN, with no UUID or saved link required. Generated once at
+   * family creation (see family.routes.ts) with a DB-backed uniqueness retry.
+   */
+  @Column({ type: 'varchar', length: 6, unique: true, nullable: true })
+  familyCode!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

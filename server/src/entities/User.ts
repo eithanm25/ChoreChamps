@@ -6,6 +6,7 @@ import {
   ManyToOne,
   OneToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Family } from './Family';
 import { ChildProfile } from './ChildProfile';
@@ -27,8 +28,15 @@ export enum UserRole {
  * Relations:
  * - User → Family: ManyToOne (nullable until the user joins or creates a household).
  * - User → ChildProfile: OneToOne (nullable; only populated for role = child).
+ *
+ * Login: name is unique per household (not globally) — the (familyId, name) index
+ * below is what makes familyCode + name a valid lookup key for device-agnostic
+ * login (see POST /api/auth/profile-login). Postgres treats NULL familyId values
+ * as distinct from each other, so multiple not-yet-onboarded parents (family is
+ * still null) can share a name without conflict.
  */
 @Entity('users')
+@Index(['name', 'family'], { unique: true })
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

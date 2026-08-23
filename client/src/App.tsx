@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
+import Login from './pages/Login';
 import ParentOnboardingPage from './pages/ParentOnBoardingPage';
 import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
@@ -13,32 +14,33 @@ export interface SafeUser {
   name: string;
   email?: string;
   familyId?: string | null;
-}
-
-// 1. הגדרת ה-Interface של ה-Props עבור רכיב הניווט הדינמי החדש
-interface InvitedAuthRouteProps {
-  token: string | null;
-  user: SafeUser | null;
-  handleAuth: (authToken: string, loggedInUser: SafeUser) => void;
-}
-
-// 2. הוצאנו את הקומפוננטה לחלוטין מחוץ ל-App כדי למנוע את שגיאת ה-Render!
-function InvitedAuthRoute({ token, user, handleAuth }: InvitedAuthRouteProps): React.ReactElement {
-  const { invitedId } = useParams<{ invitedId: string }>();
-
-  if (token && user) {
-    if (user.role === 'parent') {
-      return <Navigate to={user.familyId ? '/parent-dashboard' : '/onboarding'} replace />;
-    }
-    return <Navigate to="/child-dashboard" replace />;
-  }
-
-  return <AuthPage onAuth={handleAuth} prefilledId={invitedId ?? null} />;
+  /** Household login code — present once the user's family has been created. */
+  familyCode?: string | null;
 }
 
 export default function App(): React.ReactNode {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  // '/login' always targets a specific profile (via ?family=&username=, or typed
+  // in by hand) — it must never silently reuse a session already sitting in this
+  // browser's localStorage (e.g. two tabs sharing one incognito window: tab 1 logs
+  // in as one family member, tab 2 opens a different member's invite link and must
+  // NOT inherit tab 1's session). useState's lazy initializer runs exactly once,
+  // before the first render, which is the correct place to do this — an effect
+  // running after mount would also catch the fresh session created by submitting
+  // this very page's own login form a moment later, logging it straight back out.
+  const isLoginPath = window.location.pathname === '/login';
+
+  const [token, setToken] = useState<string | null>(() => {
+    if (isLoginPath) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      return null;
+    }
+    return localStorage.getItem('token');
+  });
   const [user, setUser] = useState<SafeUser | null>(() => {
+    if (isLoginPath) {
+      return null;
+    }
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
@@ -69,7 +71,7 @@ export default function App(): React.ReactNode {
   return (
     <BrowserRouter>
       <Routes>
-        {/* עמוד הבית הרגיל */}
+        {/* עמוד הבית — הרשמת הורה חדש, או הפניה לדשבורד אם כבר מחוברים */}
         <Route
           path="/"
           element={
@@ -84,15 +86,26 @@ export default function App(): React.ReactNode {
                 <Navigate to="/child-dashboard" replace />
               )
             ) : (
-              <AuthPage onAuth={handleAuth} prefilledId={null} />
+              <AuthPage onAuth={handleAuth} />
             )
           }
         />
 
-        {/* 3. הנתיב הדינמי הקצר - קורא לקומפוננטה החיצונית ומעביר לה את הסטייט */}
-        <Route 
-          path="/:invitedId" 
-          element={<InvitedAuthRoute token={token} user={user} handleAuth={handleAuth} />} 
+        {/* מסך התחברות אחיד — קוד משפחה + שם (ילדים/הורה נוסף) או אימייל (הורה ראשי).
+            זהו גם היעד של קישורי ההזמנה: /login?family=CODE&username=NAME */}
+        <Route
+          path="/login"
+          element={
+            token && user ? (
+              user.role === 'parent' ? (
+                <Navigate to={user.familyId ? '/parent-dashboard' : '/onboarding'} replace />
+              ) : (
+                <Navigate to="/child-dashboard" replace />
+              )
+            ) : (
+              <Login onAuth={handleAuth} />
+            )
+          }
         />
 
         {/* מסך הקמת משפחה ראשוני */}

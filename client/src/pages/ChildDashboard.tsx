@@ -4,6 +4,7 @@ import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
 import MessageBanner from '../components/MessageBanner';
+import { usePolling } from '../hooks/usePolling';
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -96,6 +97,10 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     };
     loadInitialData();
   }, []);
+
+  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שמשימות/חברים שהוריד
+  // שינה בן משפחה אחר (למשל: משימה חדשה, מחיקת פרופיל) יופיעו בלי רענון ידני
+  usePolling(fetchDashboardData);
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {

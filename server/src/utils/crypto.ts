@@ -33,3 +33,13 @@ export function verifyPassword(password: string, stored: string): boolean {
 export function generateInviteCode(): string {
   return randomBytes(6).toString('hex').toUpperCase();
 }
+
+/**
+ * Generate a 4-digit numeric household code (e.g. "4092") for device-agnostic
+ * login. Uniqueness against existing families is the caller's responsibility
+ * (see generateFamilyCode in family.routes.ts) — a random 4-digit code alone
+ * has only 10,000 possible values, so collisions are expected at scale.
+ */
+export function generateFourDigitCode(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}

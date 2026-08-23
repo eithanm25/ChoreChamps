@@ -8,13 +8,47 @@ import {
   requireAuth,
   requireParent,
 } from '../middleware/auth';
-import { generateInviteCode, hashPassword } from '../utils/crypto';
+import { generateInviteCode, generateFourDigitCode, hashPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
 import { Task, TaskStatus } from '../entities/Task';
 
 const router = Router();
 
 const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:5173';
+
+/** Postgres unique-violation error code, used to turn a duplicate name/code into a friendly 4xx. */
+const PG_UNIQUE_VIOLATION = '23505';
+
+/**
+ * Generate a family code that doesn't already exist. A bare random 4-digit
+ * code collides often enough at real scale to need a check-and-retry loop —
+ * this is not just theoretical, 10,000 total values is a small keyspace.
+ * Falls back to a wider random range after repeated collisions rather than
+ * looping forever.
+ */
+async function generateUniqueFamilyCode(): Promise<string> {
+  const familyRepo = AppDataSource.getRepository(Family);
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateFourDigitCode();
+    const existing = await familyRepo.findOne({ where: { familyCode: code } });
+    if (!existing) {
+      return code;
+    }
+  }
+
+  // Extremely unlikely after 10 attempts, but widen the keyspace rather than
+  // ever returning a colliding code.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const existing = await familyRepo.findOne({ where: { familyCode: code } });
+    if (!existing) {
+      return code;
+    }
+  }
+
+  throw new Error('לא ניתן היה להנפיק קוד משפחה ייחודי, נסו שוב');
+}
 
 /**
  * POST /api/family/create
@@ -42,10 +76,13 @@ router.post(
     const familyRepo = AppDataSource.getRepository(Family);
     const userRepo = AppDataSource.getRepository(User);
 
+    const familyCode = await generateUniqueFamilyCode();
+
     const family = familyRepo.create({
       familyName: familyName.trim(),
       parentInviteCode: generateInviteCode(),
       childInviteCode: generateInviteCode(),
+      familyCode,
     });
 
     await familyRepo.save(family);
@@ -66,11 +103,45 @@ router.post(
         familyName: family.familyName,
         parentInviteCode: family.parentInviteCode,
         childInviteCode: family.childInviteCode,
+        familyCode: family.familyCode,
       },
       token,
     });
   },
 );
+
+/**
+ * GET /api/family/me
+ * Any authenticated family member fetches their household's login code and
+ * name — used by the parent dashboard header, and safe to re-fetch any time
+ * (e.g. after a page refresh) rather than relying solely on the one-time
+ * snapshot returned by /create.
+ */
+router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+
+  if (!user.family) {
+    res.status(400).json({ error: 'You must belong to a family' });
+    return;
+  }
+
+  const family = await AppDataSource.getRepository(Family).findOne({
+    where: { id: user.family.id },
+  });
+
+  if (!family) {
+    res.status(404).json({ error: 'Family not found' });
+    return;
+  }
+
+  res.json({
+    family: {
+      id: family.id,
+      familyName: family.familyName,
+      familyCode: family.familyCode,
+    },
+  });
+});
 
 /**
  * POST /api/family/add-co-parent
@@ -105,9 +176,17 @@ router.post(
       family: parent.family,
     });
 
-    await userRepo.save(coParent);
+    try {
+      await userRepo.save(coParent);
+    } catch (err: any) {
+      if (err?.code === PG_UNIQUE_VIOLATION) {
+        res.status(409).json({ error: `כבר יש בן משפחה בשם "${name.trim()}" בקבוצה שלכם` });
+        return;
+      }
+      throw err;
+    }
 
-    const uniqueLink = `${APP_BASE_URL}/${coParent.id}`;
+    const uniqueLink = `${APP_BASE_URL}/login?family=${parent.family.familyCode}&username=${encodeURIComponent(coParent.name)}`;
 
     res.status(201).json({
       coParent: {
@@ -154,7 +233,15 @@ router.post(
       family: parent.family,
     });
 
-    await userRepo.save(child);
+    try {
+      await userRepo.save(child);
+    } catch (err: any) {
+      if (err?.code === PG_UNIQUE_VIOLATION) {
+        res.status(409).json({ error: `כבר יש בן משפחה בשם "${name.trim()}" בקבוצה שלכם` });
+        return;
+      }
+      throw err;
+    }
 
     const profile = profileRepo.create({
       id: child.id,
@@ -165,7 +252,7 @@ router.post(
 
     await profileRepo.save(profile);
 
-    const uniqueLink = `${APP_BASE_URL}/${child.id}`;
+    const uniqueLink = `${APP_BASE_URL}/login?family=${parent.family.familyCode}&username=${encodeURIComponent(child.name)}`;
 
     res.status(201).json({
       child: {

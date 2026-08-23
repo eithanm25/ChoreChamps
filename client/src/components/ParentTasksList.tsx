@@ -3,6 +3,7 @@ import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api, { resolvePhotoUrl } from '../services/api';
 import MessageBanner from './MessageBanner';
+import { usePolling } from '../hooks/usePolling';
 
 // הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
 interface AiSummaryJson {
@@ -84,29 +85,42 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
   const [rejectionNoteInput, setRejectionNoteInput] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
 
-  // 1. שליפת המשימות וחברי המשפחה (בשביל הילדים ב-Select) כשהדף עולה מראש
-  useEffect(() => {
-    const initComponent = async () => {
-      try {
-        // משיכת משימות
-        const tasksRes = await api.get('/api/tasks/family-tasks');
-        setTasks(tasksRes.data.tasks || []);
+  // 1. שליפת המשימות וחברי המשפחה (בשביל הילדים ב-Select)
+  const fetchTasksAndChildren = async () => {
+    try {
+      // משיכת משימות
+      const tasksRes = await api.get('/api/tasks/family-tasks');
+      setTasks(tasksRes.data.tasks || []);
 
-        // משיכת חברי משפחה כדי לסנן ילדים לעריכה
-        const membersRes = await api.get('/api/tasks/family-members');
-        const allMembers: FamilyMember[] = membersRes.data.members || [];
-        setChildren(allMembers.filter((m: FamilyMember) => m.role === 'child'));
-      } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          console.error(err.response?.data?.error || err.message);
-        }
-      } finally {
-        setLoading(false);
+      // משיכת חברי משפחה כדי לסנן ילדים לעריכה
+      const membersRes = await api.get('/api/tasks/family-members');
+      const allMembers: FamilyMember[] = membersRes.data.members || [];
+      setChildren(allMembers.filter((m: FamilyMember) => m.role === 'child'));
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        console.error(err.response?.data?.error || err.message);
       }
-    };
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    initComponent();
-  }, [setTasks]);
+  // עולה מראש
+  useEffect(() => {
+    const loadInitialData = async () => {
+      await fetchTasksAndChildren();
+    };
+    loadInitialData();
+    // setTasks is a prop here (unlike ChildDashboard/ParentDashboard's local useState
+    // setters), so the linter can't prove it's referentially stable across renders —
+    // it is, in practice, since ParentDashboard passes its own useState setter straight
+    // through. Intentionally mount-once: fetchTasksAndChildren is re-invoked via usePolling below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שמשימה שנוצרה/אושרה
+  // ע"י הורה אחר, או ילד שנוסף/הוסר, יופיעו כאן בלי רענון ידני
+  usePolling(fetchTasksAndChildren);
 
   // 2. פונקציית מחיקת משימה חכמה (🗑️) עם עדכון ויזואלי מיידי
   const handleDelete = async (taskId: string, taskTitle: string) => {
