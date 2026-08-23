@@ -15,6 +15,7 @@ export enum TaskStatus {
   OPEN = 'open',
   PENDING = 'pending',
   COMPLETED = 'completed',
+  REJECTED = 'rejected',
   APPROVED = 'approved',
 }
 
@@ -29,6 +30,10 @@ export enum TaskStatus {
  * - A child may accept a task only when they have NO other task in 'pending' status.
  * - Cancel-submission rules apply when a completed task would leave the child blocked
  *   by an existing pending task (see taskGuardrails service).
+ *
+ * Rework flow: a rejected task moves 'completed' -> 'rejected', never back through
+ * 'pending' — re-submission goes straight to 'rejected' -> 'completed'. This keeps
+ * 'pending' strictly capacity-limited to one per child (see taskReview service).
  */
 @Entity('tasks')
 export class Task {
@@ -55,6 +60,14 @@ export class Task {
   @Column({ type: 'int', nullable: true })
   finalScore!: number | null;
 
+  /** Parent's Hebrew note explaining what must be fixed. Cleared on re-submission. */
+  @Column({ type: 'text', nullable: true })
+  rejectionNote!: string | null;
+
+  /** How many times this chore has been sent back for corrections. */
+  @Column({ type: 'int', default: 0 })
+  rejectionCount!: number;
+
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.OPEN })
   status!: TaskStatus;
 
@@ -63,10 +76,10 @@ export class Task {
   @JoinColumn({ name: 'familyId' })
   family!: Family;
 
-  /** The parent who created this task. */
-  @ManyToOne(() => User, (user) => user.createdTasks)
+  /** The parent who created this task (nullable so deleting a co-parent doesn't orphan the row). */
+  @ManyToOne(() => User, (user) => user.createdTasks, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })
-  createdBy!: User;
+  createdBy!: User | null;
 
   /** The child responsible for completing this task (nullable while open). */
   @ManyToOne(() => User, (user) => user.tasks, { nullable: true, onDelete: 'SET NULL' })

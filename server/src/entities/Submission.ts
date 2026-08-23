@@ -43,8 +43,9 @@ export class Submission {
   @Column({ type: 'uuid' })
   taskId!: string;
 
-  @Column({ type: 'uuid' })
-  childId!: string;
+  /** Nullable so deleting the submitting child doesn't block the deletion. */
+  @Column({ type: 'uuid', nullable: true })
+  childId!: string | null;
 
   /** URLs of uploaded proof photos (stored as a comma-separated simple-array). */
   @Column({ type: 'simple-array' })
@@ -61,13 +62,17 @@ export class Submission {
   @CreateDateColumn()
   submittedAt!: Date;
 
-  /** The task this submission belongs to (one submission per task). */
-  @OneToOne(() => Task, (task) => task.submission)
+  /**
+   * The task this submission belongs to (one submission per task). Cascades so
+   * deleting a task (e.g. a parent discarding a completed chore) never leaves a
+   * foreign-key violation behind — the proof row goes with it.
+   */
+  @OneToOne(() => Task, (task) => task.submission, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'taskId' })
   task!: Task;
 
-  /** The child who submitted the proof. */
-  @ManyToOne(() => User, (user) => user.submissions)
+  /** The child who submitted the proof (nullable — SET NULL if the child is later deleted). */
+  @ManyToOne(() => User, (user) => user.submissions, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'childId' })
-  child!: User;
+  child!: User | null;
 }

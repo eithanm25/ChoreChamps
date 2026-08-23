@@ -11,7 +11,6 @@ import {
 import { generateInviteCode, hashPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
 import { Task, TaskStatus } from '../entities/Task';
-import { In } from 'typeorm';
 
 const router = Router();
 
@@ -211,20 +210,34 @@ router.delete(
       }
 
       // 🔥 שלב א': טיפול חכם במשימות המשויכות לילד לפני מחיקתו!
+      // (משימות שנוצרו על ידי ההורה הנמחק, וסאבמישנים ששלח ילד שנמחק, מנותקים
+      // אוטומטית ברמת ה-DB דרך onDelete: 'SET NULL' על הישויות — כאן מטפלים רק
+      // בהיגיון העסקי הנוסף: פתיחה מחדש של משימות שהילד היה אחראי עליהן.)
       if (memberToDelete.role === 'child') {
-        // 1. משימות פתוחות/בתהליך -> מנתקים מהילד ומחזירים למצב פתוח לכולם
-        await taskRepo.update(
-          { assignedTo: { id: memberId }, status: In([TaskStatus.OPEN, TaskStatus.PENDING, TaskStatus.COMPLETED]) } as any,
-          { assignedTo: null, status: TaskStatus.OPEN }
-        );
+        // 1. משימות פתוחות/בתהליך/ממתינות לתיקון -> מנתקים מהילד ומחזירים למצב פתוח לכולם
+        await taskRepo
+          .createQueryBuilder()
+          .update(Task)
+          .set({ assignedTo: null, status: TaskStatus.OPEN, rejectionNote: null })
+          .where('"assignedToId" = :id', { id: memberId })
+          .andWhere('status IN (:...statuses)', {
+            statuses: [TaskStatus.OPEN, TaskStatus.PENDING, TaskStatus.COMPLETED, TaskStatus.REJECTED],
+          })
+          .execute();
 
-        await taskRepo.update(
-          { assignedTo: { id: memberId }, status: TaskStatus.APPROVED },
-          { assignedTo: null } 
-        );
+        // 2. משימות שכבר אושרו נשארות בהיסטוריה, רק מנתקים את הקישור לילד שהוסר
+        await taskRepo
+          .createQueryBuilder()
+          .update(Task)
+          .set({ assignedTo: null })
+          .where('"assignedToId" = :id', { id: memberId })
+          .andWhere('status = :approved', { approved: TaskStatus.APPROVED })
+          .execute();
       }
 
       // שלב ב': עכשיו מותר למחוק את המשתמש בבטחה מלאה מהדאטהבייס!
+      // משימות שההורה הנמחק פרסם, וסאבמישנים ששלח ילד שנמחק, לא חוסמים את
+      // המחיקה — שני היחסים מוגדרים כ-onDelete: 'SET NULL' ברמת הסכמה.
       await userRepo.remove(memberToDelete);
       
       res.json({ message: 'בן המשפחה הוסר בהצלחה, והמשימות שלו טופלו בהתאם' });

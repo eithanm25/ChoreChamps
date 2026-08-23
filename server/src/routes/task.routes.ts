@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { stat, unlink } from 'fs/promises';
 import { AppDataSource } from '../data-source';
 import { Task, TaskStatus } from '../entities/Task';
@@ -11,16 +11,18 @@ import {
   requireChild,
   requireParent,
 } from '../middleware/auth';
-import { canAcceptTask, canCancelSubmission } from '../services/taskGuardrails';
+import { canAcceptTask, canCancelSubmission, childHasPendingTask } from '../services/taskGuardrails';
+import { parseReviewAction, runReview } from '../services/taskReview';
 import { reviewChorePhoto } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
+import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import multer from 'multer';
 import path from 'path';
 
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads')); 
+    cb(null, path.join(__dirname, '../../uploads'));
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -28,7 +30,40 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_PHOTO_BYTES, files: 5 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('רק קבצי תמונה מותרים'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+/**
+ * Wraps upload.array so a rejected file (wrong type, too large, too many)
+ * reaches the client as a 400 instead of falling through to Express's default
+ * error handler, which would return an opaque 500 with a stack trace.
+ */
+function handlePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  upload.array('photos', 5)(req, res, (err: unknown) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+          ? 'כל תמונה חייבת להיות עד 8MB'
+          : err instanceof Error
+            ? err.message
+            : 'שגיאה בהעלאת הקבצים';
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
 
 const router = Router();
 
@@ -82,7 +117,18 @@ router.post(
         return;
       }
 
-      // TaskStatus.PENDING is the equivalent of an actively-assigned task in this app.
+      // TaskStatus.PENDING is the equivalent of an actively-assigned task in this
+      // app, so it must respect the same one-pending-task-per-child guardrail as
+      // POST /:taskId/accept — otherwise a direct assignment silently gives the
+      // child a second concurrent pending task.
+      const hasPending = await childHasPendingTask(childUser.id);
+      if (hasPending) {
+        res.status(409).json({
+          error: `${childUser.name} כבר מבצע/ת משימה אחרת. אפשר לשייך משימה חדשה רק אחרי שהמשימה הנוכחית תושלם.`,
+        });
+        return;
+      }
+
       taskStatus = TaskStatus.PENDING;
       assignedChild = childUser;
     }
@@ -100,7 +146,7 @@ router.post(
 
     await taskRepo.save(task);
 
-    res.status(201).json({ task });
+    res.status(201).json({ task: toTaskDto(task) });
   },
 );
 
@@ -119,10 +165,10 @@ router.get('/open', requireAuth, async (req: AuthenticatedRequest, res: Response
   const taskRepo = AppDataSource.getRepository(Task);
   const tasks = await taskRepo.find({
     where: { status: TaskStatus.OPEN, family: { id: user.family.id } },
-    relations: ['family'],
+    relations: ['family', 'assignedTo', 'createdBy'],
   });
 
-  res.json({ tasks });
+  res.json({ tasks: tasks.map(toTaskDto) });
 });
 
 /**
@@ -143,7 +189,7 @@ router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: 
     order: { createdAt: 'DESC' },
   });
 
-  res.json({ tasks });
+  res.json({ tasks: tasks.map(toTaskDto) });
 });
 
 /**
@@ -208,18 +254,6 @@ router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res
 
 
 /**
- * Money is stored as decimal strings; convert to integer cents for arithmetic so
- * bonus calculations never accumulate floating-point drift.
- */
-function toCents(amount: string): number {
-  return Math.round(parseFloat(amount) * 100);
-}
-
-function fromCents(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
-/**
  * POST /api/tasks/:taskId/accept
  * Child accepts an open task in their family.
  *
@@ -262,6 +296,11 @@ router.post(
 
     if (task.status !== TaskStatus.OPEN) {
       res.status(409).json({ error: 'Task is not open for acceptance' });
+      return;
+    }
+
+    if (task.assignedTo && task.assignedTo.id !== child.id) {
+      res.status(403).json({ error: 'המשימה כבר משויכת לצ׳אמפ אחר' });
       return;
     }
 
@@ -330,7 +369,11 @@ router.post(
       return;
     }
 
+    const photoUrls = submission.photoUrls;
     await submissionRepo.remove(submission);
+    // Best-effort: the submission row is already gone, so a failed delete here
+    // only costs disk space and must not block the cancellation from completing.
+    await deleteLocalPhotos(photoUrls);
 
     task.status = TaskStatus.PENDING;
     task.awardedBonus = null;
@@ -349,7 +392,8 @@ router.post(
 
 /**
  * POST /api/tasks/:taskId/submit
- * Child submits a proof photo, moving the task from 'pending' to 'completed'.
+ * Child submits a proof photo, moving the task from 'pending' (first submission)
+ * or 'rejected' (resubmission after corrections) to 'completed'.
  *
  * photoUrl is a local path under the uploads directory. The photo is sent to
  * Anthropic vision for a structured review (summary + recommended score +
@@ -360,7 +404,7 @@ router.post(
   '/:taskId/submit',
   requireAuth,
   requireChild,
-  upload.array('photos', 5), // 🔥 המידלוור של מאלטר שתופס את קבצי המצלמה האמיתיים מהנייד!
+  handlePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
     const taskId = req.params.taskId as string;
     const child = req.user!;
@@ -373,245 +417,208 @@ router.post(
       return;
     }
 
-    const taskRepo = AppDataSource.getRepository(Task);
-    const submissionRepo = AppDataSource.getRepository(Submission);
-
-    let outcome: {
-      task: Task;
-      submission: Submission;
-    };
-
+    // Express 4 does not catch rejections from async handlers: an uncaught throw
+    // here leaves the request hanging with no response, so the client spins
+    // forever instead of showing an error. Everything below stays inside try.
     try {
-      outcome = await AppDataSource.transaction(async (manager) => {
-        const txTaskRepo = manager.getRepository(Task);
-        const txSubmissionRepo = manager.getRepository(Submission);
+      const taskRepo = AppDataSource.getRepository(Task);
+      const submissionRepo = AppDataSource.getRepository(Submission);
 
-        const task = await txTaskRepo.findOne({
-          where: { id: taskId },
-          relations: ['family', 'assignedTo', 'submission'],
-        });
+      // The 'submission' relation is deliberately NOT loaded here. Saving a Task
+      // whose one-to-one 'submission' was loaded as null, after a submission row
+      // has since been inserted, makes TypeORM try to detach the old relation
+      // with `UPDATE submissions SET "taskId" = NULL` — which violates the
+      // not-null constraint and aborts the status update.
+      const task = await taskRepo.findOne({
+        where: { id: taskId },
+        relations: ['family', 'assignedTo'],
+      });
 
-        if (!task) {
-          throw Object.assign(new Error('המשימה לא נמצאה'), { statusCode: 404 });
+      if (!task) {
+        res.status(404).json({ error: 'המשימה לא נמצאה' });
+        return;
+      }
+
+      if (task.assignedTo?.id !== child.id) {
+        res.status(403).json({ error: 'אינך משויך למשימה זו' });
+        return;
+      }
+
+      const isResubmission = task.status === TaskStatus.REJECTED;
+      if (task.status !== TaskStatus.PENDING && !isResubmission) {
+        res.status(409).json({ error: 'ניתן לשלוח להורים רק משימה שבביצוע או שחזרה לתיקון' });
+        return;
+      }
+
+      const alreadySubmitted = await submissionRepo.count({
+        where: { task: { id: taskId } },
+      });
+      if (alreadySubmitted > 0) {
+        res.status(409).json({ error: 'למשימה זו כבר הוגשה הוכחה בעבר' });
+        return;
+      }
+
+      const savedPhotoNames = files.map((file) => file.filename);
+
+      // Runs before the transaction: this is a ~6s network call and must not
+      // hold a DB transaction open. reviewChorePhoto never throws — it returns
+      // null when the review is unavailable.
+      const aiSummary = await reviewChorePhoto({
+        absolutePath: files[0].path,
+        title: task.title,
+        description: task.description,
+      });
+
+      // Status flip and submission insert are one atomic unit, so the child can
+      // never end up with a saved submission on a task still marked 'pending'.
+      const submission = await AppDataSource.transaction(async (manager) => {
+        // Compare-and-set: only the caller that flips 'pending' → 'completed'
+        // gets to insert, so a double-click cannot create two submissions.
+        const transition = await manager
+          .createQueryBuilder()
+          .update(Task)
+          .set({ status: TaskStatus.COMPLETED, rejectionNote: null })
+          .where('id = :taskId AND status = :expected', {
+            taskId,
+            expected: isResubmission ? TaskStatus.REJECTED : TaskStatus.PENDING,
+          })
+          .execute();
+
+        if (!transition.affected) {
+          return null;
         }
 
-        if (task.assignedTo?.id !== child.id) {
-          throw Object.assign(new Error('אינך משויך למשימה זו'), { statusCode: 403 });
-        }
-
-        if (task.status !== TaskStatus.PENDING) {
-          throw Object.assign(new Error('המשימה אינה במצב של הגשה פעילה ולכן לא ניתן לשלוח אותה שוב'), { statusCode: 409 });
-        }
-
-        if (task.submission) {
-          throw Object.assign(new Error('למשימה זו כבר הוגשה הוכחה בעבר'), { statusCode: 409 });
-        }
-
-        const savedPhotoNames = files.map((file) => file.filename);
-        const firstFileAbsolutePath = files[0].path;
-
-        let aiSummary = null;
-        try {
-          aiSummary = await reviewChorePhoto({
-            absolutePath: firstFileAbsolutePath,
-            title: task.title,
-            description: task.description,
-          });
-        } catch (aiErr) {
-          console.error('שגיאה זמנית בפנייה ל-Claude AI, ממשיך שמירה ללא ניתוח:', aiErr);
-        }
-
-        const submission = txSubmissionRepo.create({
-          task,
+        const created = manager.create(Submission, {
+          taskId: task.id,
           childId: child.id,
           photoUrls: savedPhotoNames,
           aiSummary,
         });
-        await txSubmissionRepo.save(submission);
-
-        task.status = TaskStatus.COMPLETED;
-        await txTaskRepo.save(task);
-
-        return { task, submission };
+        await manager.save(created);
+        return created;
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'שגיאה בשליחת המשימה להורים';
-      const status = typeof (err as { statusCode?: number }).statusCode === 'number'
-        ? (err as { statusCode: number }).statusCode
-        : 500;
 
-      res.status(status).json({ error: message });
-      return;
-    }
-
-    res.status(201).json({
-      task: { id: outcome.task.id, title: outcome.task.title, status: outcome.task.status },
-      submission: {
-        id: outcome.submission.id,
-        photoUrls: outcome.submission.photoUrls,
-        aiSummary: outcome.submission.aiSummary,
+      if (!submission) {
+        res.status(409).json({ error: 'המשימה כבר נשלחה להורים' });
+        return;
       }
-    });
+
+      res.status(201).json({
+        task: {
+          id: task.id,
+          title: task.title,
+          status: TaskStatus.COMPLETED,
+          basePrice: task.basePrice,
+          maxBonusPrice: task.maxBonusPrice,
+        },
+        submission: {
+          id: submission.id,
+          photoUrls: submission.photoUrls.map(toPublicPhotoUrl),
+          aiSummary: submission.aiSummary,
+          submittedAt: submission.submittedAt,
+        },
+        aiReviewAvailable: aiSummary !== null,
+      });
+    } catch (err) {
+      console.error('[tasks/submit] נכשלה שליחת המשימה להורים:', err);
+      res.status(500).json({ error: 'שגיאה בשמירת ההגשה. נסו שוב בעוד רגע.' });
+    }
   },
 );
 
 
 /**
- * POST /api/tasks/:taskId/approve
- * Parent approves a completed task, scores it, and pays out.
+ * POST /api/tasks/:taskId/review
+ * Parent reviews a completed task — either approves it (scores + pays out) or
+ * rejects it (sends it back to the child for corrections).
  *
- * Payout: basePrice + (finalScore / 100) * maxBonusPrice, credited to the
- * child's ChildProfile.balance. The status transition and the balance update run
- * in one transaction, with the transition written as a compare-and-set on
- * status = 'completed' so two concurrent approvals cannot pay out twice.
+ * Body: { action: 'approve', finalScore: 0..100 } | { action: 'reject', note: string }
  *
- * The local proof photos are deleted after the transaction commits.
+ * Approve payout: basePrice + (finalScore / 100) * maxBonusPrice, credited to
+ * the child's ChildProfile.balance (and lifetime totals). Reject moves the task
+ * to 'rejected' — never back to 'pending' — so the child's pending count stays
+ * capped at one even while a rejected chore awaits rework. Both transitions run
+ * as a compare-and-set on status = 'completed', so a double-click can never pay
+ * out twice or reject an already-approved task.
+ *
+ * The local proof photos are deleted after the transaction commits (approve
+ * discards them for good; reject discards them because a fresh photo is
+ * required on resubmission).
  */
 router.post(
-  '/:taskId/approve',
+  '/:taskId/review',
   requireAuth,
   requireParent,
   async (req: AuthenticatedRequest, res: Response) => {
     const taskId = req.params.taskId as string;
     const parent = req.user!;
-    const { finalScore } = req.body as { finalScore?: unknown };
-
-    if (typeof finalScore !== 'number' || !Number.isInteger(finalScore)) {
-      res.status(400).json({ error: 'finalScore must be an integer' });
-      return;
-    }
-
-    if (finalScore < 0 || finalScore > 100) {
-      res.status(400).json({ error: 'finalScore must be between 0 and 100' });
-      return;
-    }
 
     if (!parent.family) {
-      res.status(400).json({ error: 'You must belong to a family to approve tasks' });
+      res.status(400).json({ error: 'עליך להשתייך למשפחה כדי לבדוק משימות' });
+      return;
+    }
+
+    const review = parseReviewAction(req.body);
+    if ('error' in review) {
+      res.status(400).json({ error: review.error });
       return;
     }
 
     const familyId = parent.family.id;
 
-    type ApproveOutcome =
-      | {
-          ok: true;
-          awardedBonus: string;
-          totalPayout: string;
-          childId: string;
-          photoUrls: string[];
-        }
-      | { ok: false; status: number; error: string };
+    try {
+      const outcome = await AppDataSource.transaction((manager) =>
+        runReview(manager, taskId, familyId, review),
+      );
 
-    const outcome: ApproveOutcome = await AppDataSource.transaction(
-      async (manager): Promise<ApproveOutcome> => {
-        const task = await manager.findOne(Task, {
-          where: { id: taskId },
-          relations: ['family', 'assignedTo', 'submission'],
+      if (!outcome.ok) {
+        res.status(outcome.status).json({ error: outcome.error });
+        return;
+      }
+
+      // Local cleanup runs after the transaction is committed: a failed delete
+      // costs disk space and must never roll back a state change already saved.
+      await deleteLocalPhotos(outcome.photoUrls);
+
+      if (outcome.action === 'reject') {
+        res.json({
+          task: {
+            id: outcome.taskId,
+            status: TaskStatus.REJECTED,
+            rejectionNote: outcome.rejectionNote,
+            rejectionCount: outcome.rejectionCount,
+          },
         });
+        return;
+      }
 
-        if (!task) {
-          return { ok: false, status: 404, error: 'Task not found' };
-        }
+      const profile = await AppDataSource.getRepository(ChildProfile).findOne({
+        where: { id: outcome.childId },
+      });
 
-        if (task.family.id !== familyId) {
-          return { ok: false, status: 403, error: 'Task does not belong to your family' };
-        }
-
-        if (task.status !== TaskStatus.COMPLETED) {
-          return { ok: false, status: 409, error: 'Only a completed task can be approved' };
-        }
-
-        if (!task.assignedTo) {
-          return { ok: false, status: 409, error: 'Task has no assigned child' };
-        }
-
-        const childId = task.assignedTo.id;
-
-        const profile = await manager.findOne(ChildProfile, { where: { id: childId } });
-        if (!profile) {
-          return { ok: false, status: 409, error: 'Assigned child has no allowance profile' };
-        }
-
-        const bonusCents = Math.round((toCents(task.maxBonusPrice) * finalScore) / 100);
-        const totalCents = toCents(task.basePrice) + bonusCents;
-        const awardedBonus = fromCents(bonusCents);
-        const totalPayout = fromCents(totalCents);
-
-        // Compare-and-set: only the caller that flips 'completed' → 'approved'
-        // proceeds, so a double-submit cannot credit the balance twice.
-        const transition = await manager
-          .createQueryBuilder()
-          .update(Task)
-          .set({ status: TaskStatus.APPROVED, finalScore, awardedBonus })
-          .where('id = :taskId AND status = :expected', {
-            taskId,
-            expected: TaskStatus.COMPLETED,
-          })
-          .execute();
-
-        if (!transition.affected) {
-          return { ok: false, status: 409, error: 'Task was already approved' };
-        }
-
-        // Increment in SQL rather than read-modify-write so concurrent approvals
-        // of different tasks for the same child cannot lose an update.
-        await manager
-          .createQueryBuilder()
-          .update(ChildProfile)
-          .set({
-            // הנתונים החודשיים (המתאפסים ב-Leaderboard)
-            balance: () => '"balance" + CAST(:totalPayout AS numeric)',
-            totalBonusEarned: () => '"totalBonusEarned" + CAST(:awardedBonus AS numeric)',
-            
-            // 🔥 שני השדות ההיסטוריים החדשים (שנשמרים מאז ומעולם לתעודת הזהות של הילד)
-            lifetimeTasksCount: () => '"lifetimeTasksCount" + 1', // מקפיץ ב-1 את כמות המשימות שביצע
-            lifetimeEarnings: () => '"lifetimeEarnings" + CAST(:totalPayout AS numeric)', // מוסיף את סך הרווח לתמיד
-          })
-          .where('id = :childId', { childId })
-          .setParameters({ totalPayout, awardedBonus })
-          .execute();
-
-        return {
-          ok: true,
-          awardedBonus,
-          totalPayout,
-          childId,
-          photoUrls: task.submission?.photoUrls ?? [],
-        };
-      },
-    );
-
-    if (!outcome.ok) {
-      res.status(outcome.status).json({ error: outcome.error });
-      return;
+      res.json({
+        task: {
+          id: taskId,
+          status: TaskStatus.APPROVED,
+          finalScore: outcome.finalScore,
+          awardedBonus: outcome.awardedBonus,
+        },
+        payout: {
+          awardedBonus: outcome.awardedBonus,
+          totalPayout: outcome.totalPayout,
+        },
+        childProfile: {
+          id: outcome.childId,
+          balance: profile?.balance ?? null,
+          totalBonusEarned: profile?.totalBonusEarned ?? null,
+          lifetimeEarnings: profile?.lifetimeEarnings ?? null,
+          lifetimeTasksCount: profile?.lifetimeTasksCount ?? null,
+        },
+      });
+    } catch (err) {
+      console.error('[tasks/review] נכשלה בדיקת המשימה:', err);
+      res.status(500).json({ error: 'שגיאה בבדיקת המשימה. נסו שוב בעוד רגע.' });
     }
-
-    // Local cleanup runs after the payout is committed: a failed delete costs
-    // disk space, and must never roll back money the child has already earned.
-    await deleteLocalPhotos(outcome.photoUrls);
-
-    const profile = await AppDataSource.getRepository(ChildProfile).findOne({
-      where: { id: outcome.childId },
-    });
-
-    res.json({
-      task: {
-        id: taskId,
-        status: TaskStatus.APPROVED,
-        finalScore,
-        awardedBonus: outcome.awardedBonus,
-      },
-      payout: {
-        awardedBonus: outcome.awardedBonus,
-        totalPayout: outcome.totalPayout,
-      },
-      childProfile: {
-        id: outcome.childId,
-        balance: profile?.balance ?? null,
-        totalBonusEarned: profile?.totalBonusEarned ?? null,
-      },
-    });
   },
 );
 
@@ -650,10 +657,11 @@ router.delete(
 
     try {
       const taskRepo = AppDataSource.getRepository(Task);
-      
+
       // מוודאים שהמשימה קיימת ושייכת למשפחה של ההורה המבקש
       const task = await taskRepo.findOne({
-        where: { id, family: { id: parent.family?.id } }
+        where: { id, family: { id: parent.family?.id } },
+        relations: ['submission'],
       });
 
       if (!task) {
@@ -667,7 +675,12 @@ router.delete(
         return;
       }
 
+      // A 'completed' or 'rejected' task still has a submission row — the DB
+      // cascades that delete, but the proof photo files on disk are ours to clean up.
+      const photoUrls = task.submission?.photoUrls ?? [];
+
       await taskRepo.remove(task);
+      await deleteLocalPhotos(photoUrls);
       res.json({ message: 'המשימה נמחקה בהצלחה' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -698,7 +711,7 @@ router.put(
       // שליפת המשימה עם וידוא משפחה
       const task = await taskRepo.findOne({
         where: { id, family: { id: parent.family?.id } },
-        relations: ['assignedTo']
+        relations: ['assignedTo', 'createdBy'],
       });
 
       if (!task) {
@@ -714,7 +727,7 @@ router.put(
       // עדכון שדות טקסט אם נשלחו
       if (title && typeof title === 'string') task.title = title.trim();
       if (description !== undefined) task.description = description.trim();
-      
+
       // עדכון שדות כסף (ממירים לסטרינג קבוע עם 2 ספרות אחרי הנקודה)
       if (typeof basePrice === 'number') task.basePrice = basePrice.toFixed(2);
       if (typeof maxBonusPrice === 'number') task.maxBonusPrice = maxBonusPrice.toFixed(2);
@@ -724,9 +737,10 @@ router.put(
         if (assignedToId === null || assignedToId === '') {
           // אם ההורה החזיר את המשימה למצב "פתוח לכולם"
           task.assignedTo = null;
-          // אם הסטטוס היה תפוס, מחזירים אותו לפתוח
-          if (task.status === TaskStatus.PENDING) {
+          // אם הסטטוס היה תפוס או ממתין לתיקון, מחזירים אותה לפתוח
+          if (task.status === TaskStatus.PENDING || task.status === TaskStatus.REJECTED) {
             task.status = TaskStatus.OPEN;
+            task.rejectionNote = null;
           }
         } else {
           // שיוך לילד חדש/אחר
@@ -737,8 +751,21 @@ router.put(
             res.status(404).json({ error: 'הילד המבוקש לא נמצא במשפחה זו' });
             return;
           }
+
+          // אם המשימה הייתה פתוחה באוויר, היא עומדת להפוך לתפוסה עבורו — כאן
+          // חייבים לאכוף את אותה הגבלה כמו בחטיפת משימה: לא לתת לילד שתי
+          // משימות 'pending' בו-זמנית.
+          if (task.status === TaskStatus.OPEN && child.id !== task.assignedTo?.id) {
+            const hasPending = await childHasPendingTask(child.id, task.id);
+            if (hasPending) {
+              res.status(409).json({
+                error: `${child.name} כבר מבצע/ת משימה אחרת. אפשר לשייך משימה חדשה רק אחרי שהמשימה הנוכחית תושלם.`,
+              });
+              return;
+            }
+          }
+
           task.assignedTo = child;
-          // אם המשימה הייתה פתוחה באוויר, היא הופכת לתפוסה עבורו
           if (task.status === TaskStatus.OPEN) {
             task.status = TaskStatus.PENDING;
           }
@@ -746,7 +773,7 @@ router.put(
       }
 
       await taskRepo.save(task);
-      res.json({ task });
+      res.json({ task: toTaskDto(task) });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -37,6 +37,9 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const [tasks, setTasks] = useState<Task[]>([]); 
   const [showPassword, setShowPassword] = useState(false);
   const [dashboardMessage, setDashboardMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // תופס את שם/תפקיד החבר שנוצר ברגע היצירה, כדי שכפתור השיתוף לא יקרא בטעות
+  // מה-form החי (שכבר התאפס לאחר ההצלחה, ועלול היה גם להשתנות בין ההוספה לשיתוף)
+  const [lastCreatedMember, setLastCreatedMember] = useState<{ name: string; role: 'parent' | 'child' } | null>(null);
 
 
   // שליפת חברי המשפחה מהשרת
@@ -94,7 +97,10 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (response.data.uniqueLink) {
         setInviteLink(response.data.uniqueLink);
       }
+      // נשמר כאן, לפני איפוס הטופס, כדי שכפתור השיתוף תמיד ידבר על החבר שבאמת נוצר
+      setLastCreatedMember({ name: form.name.trim(), role: form.role });
       setDashboardMessage({ type: 'success', text: `${form.name.trim()} נוסף/ה בהצלחה למערכת` });
+      setForm({ name: '', password: '', role: 'child' });
       await refreshMembers();
     } catch (err: unknown) {
       let errorMessage = 'שגיאה בהוספת בן משפחה';
@@ -190,8 +196,6 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       text: `היי ${memberName}, פתחתי לך חשבון מסוג ${roleText}.\nהצטרפו למשפחת ${familyName} והתחילו ליהנות מ-ChoreChamps! 🏆✨\n\nהמזהה שלך כבר מחכה בפנים, רק כנסו והקישו את ה-PIN שקבענו:\n`,
       url: link // הקישור הקצר והחכם שלכם
     };
-
-    setForm({ name: '', password: '', role: 'child' });
 
     // בדיקה: האם הדפדפן בנייד תומך במגירת השיתוף הטבעית?
     if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
@@ -331,7 +335,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                 <span>➕</span> הוספת בן משפחה
               </h2>
               <div className="bg-slate-800/40 border border-slate-700/50 p-5 rounded-2xl shadow-xl">
-                <form onSubmit={handleAddMember} className="flex flex-col gap-4" autoComplete="none">
+                <form onSubmit={handleAddMember} className="flex flex-col gap-4" autoComplete="off">
                   <div className="flex flex-col gap-1">
                     <label className="text-slate-300 text-xs font-medium">תפקיד במשפחה</label>
                     <select
@@ -348,8 +352,9 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                     <label className="text-slate-300 text-xs font-medium">שם פרטי</label>
                     <input
                       type="text"
-                      autoComplete="new-name"
+                      autoComplete="off"
                       name="name"
+                      value={form.name}
                       onChange={handleInputChange}
                       placeholder="לדוגמה: נועם"
                       className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
@@ -379,6 +384,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                       onMouseLeave={() => setShowPassword(false)} // ביטחון: אם העכבר ברח הצידה
                       onTouchStart={() => setShowPassword(true)}   // תמיכה מלאה במסכי מגע בטלפון!
                       onTouchEnd={() => setShowPassword(false)}
+                      onTouchCancel={() => setShowPassword(false)} // ביטחון: אם המגע בוטל (למשל גלילה או התראה)
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-100 transition-opacity select-none cursor-pointer p-1"
                       title="החזק כדי להציג סיסמה"
                     >
@@ -405,7 +411,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                   {/* כפתור השיתוף המרכזי שפותח את הוואטסאפ/אינסטגרם בנייד */}
                   <button
                     type="button"
-                    onClick={() => handleShareInvite(form.name || 'בן המשפחה', form.role, inviteLink)}
+                    onClick={() => handleShareInvite(lastCreatedMember?.name || 'בן המשפחה', lastCreatedMember?.role || 'child', inviteLink)}
                     className="w-full py-2.5 mt-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:from-emerald-600 transition-all border border-emerald-400/20"
                   >
                     <span>📲</span> לחצו לשיתוף מהיר (וואטסאפ, מייל וכו׳)

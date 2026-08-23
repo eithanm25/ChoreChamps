@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
@@ -30,7 +30,9 @@ interface Task {
   maxBonusPrice: string | number;
   awardedBonus: string | number | null;
   finalScore: number | null;
-  status: 'open' | 'pending' | 'completed' | 'approved';
+  rejectionNote: string | null;
+  rejectionCount: number;
+  status: 'open' | 'pending' | 'completed' | 'rejected' | 'approved';
   assignedTo: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
   submission?: Submission | null;
@@ -63,6 +65,17 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   // סטייט לצפייה באחים
   const [selectedSibling, setSelectedSibling] = useState<FamilyMember | null>(null);
 
+  // מעקב אחר כל ה-blob URLs שנוצרו כדי לנקות אותם גם אם הרכיב יורד מהמסך באמצע הגשה
+  const previewUrlsRef = useRef<string[]>([]);
+  useEffect(() => {
+    previewUrlsRef.current = previewUrls;
+  }, [previewUrls]);
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
   const fetchDashboardData = async () => {
     try {
       const tasksRes = await api.get('/api/tasks/family-tasks');
@@ -78,29 +91,19 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   };
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-    try {
-      const tasksRes = await api.get('/api/tasks/family-tasks');
-      setTasks(tasksRes.data.tasks || []);
-
-      const membersRes = await api.get('/api/tasks/family-members');
-      setMembers(membersRes.data.members || []);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) console.error(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-    fetchDashboardData();
+    const loadInitialData = async () => {
+      await fetchDashboardData();
+    };
+    loadInitialData();
   }, []);
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
-      
+
       // שומרים את הקבצים האמיתיים בסטייט
       setSelectedPhotos(prev => [...prev, ...filesArray]);
-      
+
       // מייצרים כתובות אינטרנט זמניות בדפדפן רק בשביל ה-Preview הויזואלי
       const newPreviews = filesArray.map(file => URL.createObjectURL(file));
       setPreviewUrls(prev => [...prev, ...newPreviews]);
@@ -114,6 +117,13 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     setPreviewUrls(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
+  const closeSubmitForm = () => {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setSubmittingTaskId(null);
+    setSelectedPhotos([]);
+    setPreviewUrls([]);
+    setProofDescription('');
+  };
 
   // חטיפת משימה פתוחה (⚡)
   const handleAcceptTask = async (taskId: string) => {
@@ -131,8 +141,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     }
   };
 
-  // שליחת המשימה להורים עם הוכחה (📸)
-    // שליחת המשימה להורים - גרסת ה-Production האמיתית והמאובטחת עם קבצי מצלמה!
+  // שליחת המשימה להורים עם הוכחה (📸) — גם להגשה ראשונה וגם לתיקון אחרי דחייה
   const handleSendToParents = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (actionLoading || !submittingTaskId || selectedPhotos.length === 0) return;
@@ -147,11 +156,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         formData.append('photos', file);
       });
 
-      const response = await api.post(`/api/tasks/${submittingTaskId}/submit`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const response = await api.post(`/api/tasks/${submittingTaskId}/submit`, formData);
 
       const taskResponse = response.data?.task;
 
@@ -161,12 +166,15 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
             ? {
                 ...task,
                 status: taskResponse?.status ?? 'completed',
+                rejectionNote: null,
                 submission: response.data?.submission ?? task.submission,
               }
             : task,
         ),
       );
 
+      // מנקים את ה-blob URLs שנוצרו לפני איפוס הטופס, כדי לא לזלוג זיכרון
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
       setSubmittingTaskId(null);
       setProofDescription('');
       setSelectedPhotos([]);
@@ -175,7 +183,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
 
       setMessage({
         type: 'success',
-        text: `✅ ${taskTitle} נשלחה להורים והצטרפה למעקב האישור שלהם!`,
+        text: `🎉 כל הכבוד! "${taskTitle}" נשלחה להורים ומחכה לאישור שלהם`,
       });
     } catch (err: unknown) {
       let errorText = 'שגיאה בשליחת המשימה להורים';
@@ -188,12 +196,88 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     }
   };
 
-
   const currentChildProfile = members.find(m => m.id === user.id);
   const currentBalance = currentChildProfile?.lifetimeEarnings || 0;
 
   const openAvailableTasks = tasks.filter(t => t.status === 'open' && !t.assignedTo);
-  const myActiveTask = tasks.find(t => t.assignedTo?.id === user.id && (t.status === 'pending' || t.status === 'open'));
+
+  // המשימה היחידה שהילד יכול לעבוד עליה כרגע (המגבלה של מקסימום 'pending' אחד נאכפת בשרת)
+  const myPendingTask = tasks.find(t => t.assignedTo?.id === user.id && t.status === 'pending');
+  // משימות שכבר נשלחו וממתינות לבדיקת הורה — יכול להיות יותר מאחת בו-זמנית
+  const myCompletedTasks = tasks.filter(t => t.assignedTo?.id === user.id && t.status === 'completed');
+  // משימות שההורה החזיר לתיקון — "כמוסת התיקונים"
+  const myRejectedTasks = tasks.filter(t => t.assignedTo?.id === user.id && t.status === 'rejected');
+
+  // המגבלה בפועל על "חטיפת" משימה חדשה: רק 'pending' חוסם, לא 'completed' ולא 'rejected' —
+  // כך שהילד חופשי להמשיך לעבוד בזמן שמשימה קודמת ממתינה לאישור או לתיקון.
+  const hasBlockingPendingTask = !!myPendingTask;
+
+  const renderSubmitForm = (submitLabel: string) => (
+    <form onSubmit={handleSendToParents} className="bg-slate-900/60 p-4 border border-slate-800 rounded-xl flex flex-col gap-4 text-xs animate-fade-in text-right">
+      <span className="font-bold text-emerald-400 flex items-center gap-1">
+        <span>📸</span> צילום הוכחה לביצוע המשימה
+      </span>
+
+      {/* כפתור המצלמה/העלאה המעוצב לנייד */}
+      <div className="flex flex-col gap-2">
+        <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold">
+          <span>📷</span> {selectedPhotos.length > 0 ? 'צלם/הוסף עוד תמונה' : 'לחץ כאן כדי לצלם את העבודה'}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handlePhotoChange}
+            className="hidden"
+            disabled={actionLoading}
+          />
+        </label>
+      </div>
+
+      {/* 🖼️ תצוגה מקדימה (Preview) של התמונות שהילד צילם כולל כפתור מחיקה קטן */}
+      {previewUrls.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-slate-400 text-[10px]">התמונות שנבחרו לשליחה:</span>
+          <div className="flex gap-2 overflow-x-auto py-1">
+            {previewUrls.map((base64Str, idx) => (
+              <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
+                <img src={base64Str} alt="תצוגה מקדימה" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(idx)}
+                  className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[9px] font-black shadow-md cursor-pointer select-none"
+                  title="מחק תמונה"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <label className="text-slate-400 font-medium">הערות להורים (אופציונלי):</label>
+        <textarea
+          value={proofDescription}
+          onChange={(e) => setProofDescription(e.target.value)}
+          placeholder="רוצים לספר להורים משהו על המשימה? (לדוגמה: ניקיתי ממש טוב וגם ריססתי מטהר אוויר!)"
+          className="w-full h-16 p-2 bg-slate-800 rounded-lg text-white resize-none border border-slate-700 focus:outline-none focus:border-indigo-500"
+          disabled={actionLoading}
+        />
+      </div>
+
+      <div className="flex gap-2 justify-end mt-1 border-t border-slate-800/80 pt-3">
+        <button type="button" onClick={closeSubmitForm} className="px-4 py-1.5 bg-slate-800 text-slate-300 rounded-lg font-bold">ביטול</button>
+        <button
+          type="submit"
+          disabled={actionLoading || selectedPhotos.length === 0}
+          className="px-5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-white rounded-lg shadow-md hover:from-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {actionLoading ? 'מעלה משימה...' : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
 
   if (loading) {
     return (
@@ -208,7 +292,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         {message && (
           <MessageBanner type={message.type} text={message.text} onDismiss={() => setMessage(null)} />
         )}
-        
+
         {/* ראש דף משחקי */}
         <header className="bg-slate-800/50 border border-slate-700/50 p-5 rounded-2xl flex justify-between items-center shadow-xl">
           <div>
@@ -253,7 +337,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                           <span className="text-emerald-400">💰 בסיס: {Number(task.basePrice)} ₪</span>
                           <span className="text-purple-400">✨ בונוס: {Number(task.maxBonusPrice)} ₪</span>
                         </div>
-                        <button onClick={() => handleAcceptTask(task.id)} disabled={actionLoading || !!myActiveTask} className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 rounded-lg text-xs font-black transition-all disabled:opacity-30">חטוף! ⚡</button>
+                        <button onClick={() => handleAcceptTask(task.id)} disabled={actionLoading || hasBlockingPendingTask} className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 rounded-lg text-xs font-black transition-all disabled:opacity-30">חטוף! ⚡</button>
                       </div>
                     </div>
                   ))}
@@ -264,102 +348,120 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
             {/* ⏳ המשימה שלי */}
             <section className="flex flex-col gap-3 mt-2">
               <h2 className="text-base font-bold text-slate-300">⏳ המשימה הנוכחית שלי</h2>
-              {!myActiveTask ? (
+              {!myPendingTask ? (
                 <div className="text-center py-6 bg-slate-800/10 border border-slate-800 rounded-xl text-slate-500 text-xs">אינך מבצע שום משימה כרגע. חטוף משימה מהלוח שלמעלה כדי להתחיל להרוויח! 💰</div>
               ) : (
                 <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 shadow-xl flex flex-col gap-4">
                   <div className="flex justify-between items-start border-b border-indigo-500/10 pb-3">
                     <div>
                       <span className="text-[10px] text-indigo-400 font-bold tracking-wider uppercase">משימה נעולה עליך</span>
-                      <h3 className="font-black text-white text-base mt-0.5">{myActiveTask.title}</h3>
-                      {myActiveTask.description && <p className="text-slate-400 text-xs leading-relaxed mt-1">{myActiveTask.description}</p>}
+                      <h3 className="font-black text-white text-base mt-0.5">{myPendingTask.title}</h3>
+                      {myPendingTask.description && <p className="text-slate-400 text-xs leading-relaxed mt-1">{myPendingTask.description}</p>}
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${myActiveTask.status === 'completed' ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                      {myActiveTask.status === 'completed' ? '📩 מחכה לאישור ההורים' : '🏃 בתהליך ביצוע'}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400">
+                      🏃 בתהליך ביצוע
                     </span>
                   </div>
 
-                  {myActiveTask.status !== 'completed' && submittingTaskId !== myActiveTask.id && (
+                  {submittingTaskId !== myPendingTask.id ? (
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
                       <div className="flex gap-4 text-xs font-bold text-slate-300">
-                        <span className="text-emerald-400">💰 שכר בסיס: {Number(myActiveTask.basePrice)} ₪</span>
-                        <span className="text-purple-400">✨ בונוס גג: {Number(myActiveTask.maxBonusPrice)} ₪</span>
+                        <span className="text-emerald-400">💰 שכר בסיס: {Number(myPendingTask.basePrice)} ₪</span>
+                        <span className="text-purple-400">✨ בונוס גג: {Number(myPendingTask.maxBonusPrice)} ₪</span>
                       </div>
-                      <button type="button" onClick={() => setSubmittingTaskId(myActiveTask.id)} className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-xs rounded-full shadow-lg hover:from-emerald-600 transition-all">סיימתי! הפעל מצלמה 📸</button>
+                      <button type="button" onClick={() => setSubmittingTaskId(myPendingTask.id)} className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-xs rounded-full shadow-lg hover:from-emerald-600 transition-all">סיימתי! הפעל מצלמה 📸</button>
                     </div>
+                  ) : (
+                    renderSubmitForm('שלח להורים! 🚀')
                   )}
-
-                                    {submittingTaskId === myActiveTask.id && (
-                    <form onSubmit={handleSendToParents} className="bg-slate-900/60 p-4 border border-slate-800 rounded-xl flex flex-col gap-4 text-xs animate-fade-in text-right">
-                      <span className="font-bold text-emerald-400 flex items-center gap-1">
-                        <span>📸</span> צילום הוכחה לביצוע המשימה
-                      </span>
-                      
-                      {/* כפתור המצלמה/העלאה המעוצב לנייד */}
-                      <div className="flex flex-col gap-2">
-                        <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold">
-                          <span>📷</span> {selectedPhotos.length > 0 ? 'צלם/הוסף עוד תמונה' : 'לחץ כאן כדי לצלם את העבודה'}
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            multiple 
-                            onChange={handlePhotoChange} 
-                            className="hidden" // מחביאים את האינפוט המכוער של הדפדפן
-                            disabled={actionLoading}
-                          />
-                        </label>
-                      </div>
-
-                      {/* 🖼️ תצוגה מקדימה (Preview) של התמונות שהילד צילם כולל כפתור מחיקה קטן */}
-                      {previewUrls.length > 0 && (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-slate-400 text-[10px]">התמונות שנבחרו לשליחה:</span>
-                          <div className="flex gap-2 overflow-x-auto py-1">
-                            {previewUrls.map((base64Str, idx) => (
-                              <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
-                                <img src={base64Str} alt="תצוגה מקדימה" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
-                                <button
-                                  type="button"
-                                  onClick={() => removePhoto(idx)}
-                                  className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[9px] font-black shadow-md cursor-pointer select-none"
-                                  title="מחק תמונה"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-col gap-1">
-                        <label className="text-slate-400 font-medium">הערות להורים (אופציונלי):</label>
-                        <textarea 
-                          value={proofDescription} 
-                          onChange={(e) => setProofDescription(e.target.value)} 
-                          placeholder="רוצים לספר להורים משהו על המשימה? (לדוגמה: ניקיתי ממש טוב וגם ריססתי מטהר אוויר!)" 
-                          className="w-full h-16 p-2 bg-slate-800 rounded-lg text-white resize-none border border-slate-700 focus:outline-none focus:border-indigo-500" 
-                          disabled={actionLoading}
-                        />
-                      </div>
-                      
-                      {/* 🔥 כפתור הגשה סופי - כעת הוא DISABLED לחלוטין כל עוד אין לפחות תמונה אחת! */}
-                      <div className="flex gap-2 justify-end mt-1 border-t border-slate-800/80 pt-3">
-                        <button type="button" onClick={() => { setSubmittingTaskId(null); setSelectedPhotos([]); setProofDescription(''); }} className="px-4 py-1.5 bg-slate-800 text-slate-300 rounded-lg font-bold">ביטול</button>
-                        <button 
-                          type="submit" 
-                          disabled={actionLoading || selectedPhotos.length === 0} // הנעילה שביקשת!
-                          className="px-5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 font-black text-white rounded-lg shadow-md hover:from-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          {actionLoading ? 'מעלה משימה...' : 'שלח להורים! 🚀'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
                 </div>
               )}
             </section>
+
+            {/* 📩 משימות שממתינות לאישור ההורים — יכולות להיות כמה בו-זמנית */}
+            {myCompletedTasks.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-base font-bold text-slate-300">📩 ממתין לאישור ההורים ({myCompletedTasks.length})</h2>
+                <div className="flex flex-col gap-3">
+                  {myCompletedTasks.map((task) => (
+                    <div key={task.id} className="relative overflow-hidden bg-gradient-to-br from-emerald-500/15 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 rounded-2xl p-5 flex flex-col gap-4 shadow-lg shadow-emerald-500/10">
+                      <div className="flex items-start gap-3">
+                        <span className="text-3xl animate-bounce">🎉</span>
+                        <div className="flex flex-col">
+                          <span className="text-emerald-300 font-black text-sm">{task.title}</span>
+                          <span className="text-slate-400 text-[11px] mt-1 leading-relaxed">
+                            ההוכחה שצילמת נשמרה והועברה לאישור. ברגע שההורים יאשרו — הכסף ייכנס ישר לקופה שלך 🪙
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 border-t border-emerald-500/10 pt-3 text-center">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] text-slate-500 font-bold">תמונות שנשלחו</span>
+                          <span className="text-sm font-black text-white">{task.submission?.photoUrls?.length || 0} 📸</span>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] text-slate-500 font-bold">שכר בסיס מובטח</span>
+                          <span className="text-sm font-black text-emerald-400">{Number(task.basePrice)} ₪</span>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] text-slate-500 font-bold">בונוס אפשרי</span>
+                          <span className="text-sm font-black text-purple-400">עד {Number(task.maxBonusPrice)} ₪</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-slate-900/40 rounded-xl px-3 py-2">
+                        <span className="text-base animate-pulse">⏳</span>
+                        <span className="text-[11px] text-slate-300 font-medium">
+                          ממתין לאישור של {task.createdBy?.name || 'ההורים'} — נעדכן אותך ברגע שיאשרו
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 🔧 כמוסת "משימות לתיקון" — משימות שההורה החזיר עם הערה */}
+            {myRejectedTasks.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-base font-bold text-slate-300">🔧 משימות לתיקון ({myRejectedTasks.length})</h2>
+                <div className="flex flex-col gap-3">
+                  {myRejectedTasks.map((task) => (
+                    <div key={task.id} className="p-5 rounded-2xl bg-rose-950/20 border border-rose-500/30 shadow-xl flex flex-col gap-4">
+                      <div className="flex justify-between items-start border-b border-rose-500/10 pb-3">
+                        <div>
+                          <span className="text-[10px] text-rose-400 font-bold tracking-wider uppercase">חזר לתיקון{task.rejectionCount > 1 ? ` (ניסיון ${task.rejectionCount + 1})` : ''}</span>
+                          <h3 className="font-black text-white text-base mt-0.5">{task.title}</h3>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400">
+                          🔧 נדרש תיקון
+                        </span>
+                      </div>
+
+                      {task.rejectionNote && (
+                        <div className="bg-slate-900/50 border border-rose-500/10 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-rose-300 font-bold">💬 מה {task.createdBy?.name || 'ההורים'} ביקשו לתקן:</span>
+                          <p className="text-slate-300 text-xs leading-relaxed">{task.rejectionNote}</p>
+                        </div>
+                      )}
+
+                      {submittingTaskId !== task.id ? (
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                          <div className="flex gap-4 text-xs font-bold text-slate-300">
+                            <span className="text-emerald-400">💰 שכר בסיס: {Number(task.basePrice)} ₪</span>
+                            <span className="text-purple-400">✨ בונוס גג: {Number(task.maxBonusPrice)} ₪</span>
+                          </div>
+                          <button type="button" onClick={() => setSubmittingTaskId(task.id)} className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-rose-500 to-orange-500 font-black text-xs rounded-full shadow-lg hover:from-rose-600 transition-all">תקן ושלח שוב 📸</button>
+                        </div>
+                      ) : (
+                        renderSubmitForm('שלח תיקון להורים! 🚀')
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -370,8 +472,8 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
               <h2 className="text-base font-bold text-slate-300">👥 בני המשפחה שלי</h2>
               <div className="flex flex-col gap-2">
                 {members.map(member => (
-                  <div 
-                    key={member.id} 
+                  <div
+                    key={member.id}
                     onClick={() => member.role === 'child' && setSelectedSibling(member)}
                     className={`p-3 rounded-xl border text-right transition-all shadow-md ${member.role === 'child' ? 'cursor-pointer hover:border-indigo-500/60' : ''} ${selectedSibling?.id === member.id ? 'bg-indigo-950/20 border-indigo-500 ring-2 ring-indigo-500/20' : 'bg-slate-800/40 border-slate-700/50'}`}
                   >
@@ -411,12 +513,14 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                             <div className="flex justify-between items-start gap-2">
                               <span className="font-bold text-white leading-tight">{task.title}</span>
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap ${
-                                task.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
-                                task.status === 'completed' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
+                                task.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                task.status === 'completed' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                task.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
                                 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
                               }`}>
                                 {task.status === 'approved' ? `✅ אושר ע"י ${task.createdBy?.name || 'הורה'} לאחר ביצועו של ${selectedSibling.name}` :
-                                 task.status === 'completed' ? `📩 הושלם ע"י ${selectedSibling.name}` : '⏳ בתהליך עבודה'}
+                                 task.status === 'completed' ? `📩 הושלם ע"י ${selectedSibling.name}` :
+                                 task.status === 'rejected' ? `🔧 חזר לתיקון` : '⏳ בתהליך עבודה'}
                               </span>
                             </div>
                             <div className="flex gap-4 text-[10px] text-slate-400 font-semibold border-t border-slate-800/60 pt-1.5">
@@ -441,4 +545,3 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
     </div>
   );
 }
-
