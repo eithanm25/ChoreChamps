@@ -5,6 +5,7 @@ import type { SafeUser } from '../App';
 import api from '../services/api';
 import axios from 'axios';
 import MessageBanner from '../components/MessageBanner';
+import GoogleAuthButton from '../components/GoogleAuthButton';
 
 
 interface AuthPageProps {
@@ -14,7 +15,12 @@ interface AuthPageProps {
 // עמוד זה מטפל אך ורק ברישום הורה ראשי חדש. התחברות (הורים וילדים כאחד)
 // עברה למסך /login הייעודי — כדי שקישורי הזמנה (?family=&username=) תמיד
 // ינחתו על מסך התחברות בלבד, ולא ייתקלו בטופס "פתיחת משפחה" בטעות.
+//
+// חריג יחיד: קישור הזמנת הורה נוסף (?inviteCode=...) כן נוחת כאן, כי הצטרפות
+// הורה נוסף עם Google היא-הצטרפות-לחשבון-חדש, לא התחברות לחשבון קיים.
 export default function AuthPage({ onAuth }: AuthPageProps): React.ReactNode {
+  const inviteCode = new URLSearchParams(window.location.search).get('inviteCode');
+
   const [signupForm, setSignupForm] = useState({ name: '', email: '', password: '' });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -23,11 +29,14 @@ export default function AuthPage({ onAuth }: AuthPageProps): React.ReactNode {
     setSignupForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // שליחת טופס הרשמה (הורים בלבד)
+  // שליחת טופס הרשמה — הורה ראשי (ללא inviteCode) או הורה נוסף (עם inviteCode)
   async function handleSignupSubmit(e: SyntheticEvent) {
     e.preventDefault();
     try {
-      const response = await api.post('/api/auth/signup', signupForm);
+      const response = await api.post('/api/auth/signup', {
+        ...signupForm,
+        inviteCode: inviteCode || undefined,
+      });
       const { token, user } = response.data;
       setMessage({ type: 'success', text: 'החשבון נוצר בהצלחה! מתחברים עכשיו...' });
       onAuth(token, user);
@@ -55,13 +64,17 @@ export default function AuthPage({ onAuth }: AuthPageProps): React.ReactNode {
             ChoreChamps
           </h1>
           <p className="mt-1 text-slate-400 text-sm font-medium">
-            הופכים מטלות לפרסים משפחתיים
+            {inviteCode ? 'הצטרפות כהורה נוסף למשפחה 👑' : 'הופכים מטלות לפרסים משפחתיים'}
           </p>
         </header>
 
-        {/* הוראות למשתמש חדש */}
+        {/* הוראות למשתמש חדש — הניסוח משתנה, אבל הטופס עצמו זהה בשני המצבים */}
         <div className="mb-6 p-3 bg-slate-800/40 rounded-xl ring-1 ring-slate-700/30 text-xs text-slate-300 leading-relaxed">
-          <p>💡 <strong>הוראות להורים:</strong> אם זו הפעם הראשונה שלכם באפליקציה, מלאו את פרטיכם כאן כדי ליצור את חשבון המנהל. במסך הבא תוכלו להקים את הקבוצה המשפחתית שלכם ולקבל קוד משפחה לשיתוף עם הילדים.</p>
+          {inviteCode ? (
+            <p>👑 <strong>הצטרפות כהורה נוסף:</strong> קיבלתם קישור הזמנה למשפחה קיימת. מלאו פרטים או התחברו עם Google כדי להצטרף מיד — לא נפתחת עבורכם משפחה חדשה, אתם מצטרפים לקבוצה הקיימת.</p>
+          ) : (
+            <p>💡 <strong>הוראות להורים:</strong> אם זו הפעם הראשונה שלכם באפליקציה, מלאו את פרטיכם כאן כדי ליצור את חשבון המנהל. במסך הבא תוכלו להקים את הקבוצה המשפחתית שלכם ולקבל קוד משפחה לשיתוף עם הילדים.</p>
+          )}
         </div>
 
         <main>
@@ -70,6 +83,21 @@ export default function AuthPage({ onAuth }: AuthPageProps): React.ReactNode {
               <MessageBanner type={message.type} text={message.text} onDismiss={() => setMessage(null)} />
             </div>
           )}
+
+          {/* התחברות מהירה עם Google — הורים בלבד */}
+          <div className="mb-5 flex flex-col gap-3">
+            <GoogleAuthButton
+              onAuth={onAuth}
+              onError={(text) => setMessage({ type: 'error', text })}
+              inviteCode={inviteCode}
+              mode="signup"
+            />
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-700/60" />
+              <span className="text-[11px] text-slate-500 font-medium">או עם אימייל וסיסמה</span>
+              <div className="h-px flex-1 bg-slate-700/60" />
+            </div>
+          </div>
 
           {/* טופס הרשמה הורה */}
           <form onSubmit={handleSignupSubmit} className="flex flex-col gap-4 w-full" autoComplete="off">
@@ -115,14 +143,14 @@ export default function AuthPage({ onAuth }: AuthPageProps): React.ReactNode {
             </div>
 
             <button type="submit" className="w-full py-2.5 mt-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white font-bold shadow-lg hover:from-indigo-600 hover:to-violet-600 transition-all">
-              צור חשבון הורה והקם משפחה
+              {inviteCode ? 'הצטרפות כהורה נוסף 🚀' : 'צור חשבון הורה והקם משפחה'}
             </button>
           </form>
 
           <p className="mt-5 text-center text-xs text-slate-400">
-            כבר חברים במשפחה?{' '}
+            כבר יש לכם חשבון?{' '}
             <Link to="/login" className="text-indigo-400 font-bold hover:text-indigo-300">
-              התחברו כאן עם קוד המשפחה
+              התחברו כאן
             </Link>
           </p>
         </main>

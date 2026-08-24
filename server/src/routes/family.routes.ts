@@ -8,47 +8,14 @@ import {
   requireAuth,
   requireParent,
 } from '../middleware/auth';
-import { generateInviteCode, generateFourDigitCode, hashPassword } from '../utils/crypto';
+import { generateInviteCode, generateShortInviteCode, hashPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
 import { Task, TaskStatus } from '../entities/Task';
+import { generateUniqueFamilyCode, PG_UNIQUE_VIOLATION } from '../services/familyCode';
 
 const router = Router();
 
 const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:5173';
-
-/** Postgres unique-violation error code, used to turn a duplicate name/code into a friendly 4xx. */
-const PG_UNIQUE_VIOLATION = '23505';
-
-/**
- * Generate a family code that doesn't already exist. A bare random 4-digit
- * code collides often enough at real scale to need a check-and-retry loop —
- * this is not just theoretical, 10,000 total values is a small keyspace.
- * Falls back to a wider random range after repeated collisions rather than
- * looping forever.
- */
-async function generateUniqueFamilyCode(): Promise<string> {
-  const familyRepo = AppDataSource.getRepository(Family);
-
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const code = generateFourDigitCode();
-    const existing = await familyRepo.findOne({ where: { familyCode: code } });
-    if (!existing) {
-      return code;
-    }
-  }
-
-  // Extremely unlikely after 10 attempts, but widen the keyspace rather than
-  // ever returning a colliding code.
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const existing = await familyRepo.findOne({ where: { familyCode: code } });
-    if (!existing) {
-      return code;
-    }
-  }
-
-  throw new Error('לא ניתן היה להנפיק קוד משפחה ייחודי, נסו שוב');
-}
 
 /**
  * POST /api/family/create
@@ -80,7 +47,9 @@ router.post(
 
     const family = familyRepo.create({
       familyName: familyName.trim(),
-      parentInviteCode: generateInviteCode(),
+      // Co-parent invite codes are generated on demand (POST /co-parent-invite)
+      // when the parent actually wants to invite someone — not eagerly here.
+      parentInviteCode: null,
       childInviteCode: generateInviteCode(),
       familyCode,
     });
@@ -139,63 +108,45 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       id: family.id,
       familyName: family.familyName,
       familyCode: family.familyCode,
+      // Grants "join as co-parent via Google" — sensitive, so only parents
+      // (who can already see and reshare it) get it back, never children.
+      parentInviteCode: user.role === UserRole.PARENT ? family.parentInviteCode : undefined,
     },
   });
 });
 
 /**
- * POST /api/family/add-co-parent
- * Parent creates a co-parent account (name + password, email null).
- * Returns a unique onboarding link for the co-parent.
+ * POST /api/family/co-parent-invite
+ * Generates a fresh, short, single-use invite code for a co-parent to join
+ * this family via Google Sign-In (POST /api/auth/google, Flow B). The parent
+ * never types a name, email, or password for the co-parent — that all comes
+ * from the co-parent's own verified Google account when they use the link.
+ *
+ * Calling this again before the previous code is used simply overwrites it
+ * (the old one stops working) — there is always at most one valid code per
+ * family. The code is consumed (cleared) automatically the moment someone
+ * successfully joins with it.
  */
 router.post(
-  '/add-co-parent',
+  '/co-parent-invite',
   requireAuth,
   requireParent,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { name, password } = req.body as { name?: string; password?: string };
     const parent = req.user!;
 
-    if (!name?.trim() || !password) {
-      res.status(400).json({ error: 'name and password are required' });
-      return;
-    }
-
     if (!parent.family) {
-      res.status(400).json({ error: 'Create a family before adding co-parents' });
+      res.status(400).json({ error: 'Create a family before inviting a co-parent' });
       return;
     }
 
-    const userRepo = AppDataSource.getRepository(User);
+    const familyRepo = AppDataSource.getRepository(Family);
+    const inviteCode = generateShortInviteCode();
 
-    const coParent = userRepo.create({
-      name: name.trim(),
-      email: null,
-      password: hashPassword(password),
-      role: UserRole.PARENT,
-      family: parent.family,
-    });
-
-    try {
-      await userRepo.save(coParent);
-    } catch (err: any) {
-      if (err?.code === PG_UNIQUE_VIOLATION) {
-        res.status(409).json({ error: `כבר יש בן משפחה בשם "${name.trim()}" בקבוצה שלכם` });
-        return;
-      }
-      throw err;
-    }
-
-    const uniqueLink = `${APP_BASE_URL}/login?family=${parent.family.familyCode}&username=${encodeURIComponent(coParent.name)}`;
+    await familyRepo.update({ id: parent.family.id }, { parentInviteCode: inviteCode });
 
     res.status(201).json({
-      coParent: {
-        id: coParent.id,
-        name: coParent.name,
-        role: coParent.role,
-        familyId: parent.family.id,
-      },
-      uniqueLink,
+      inviteCode,
+      uniqueLink: `${APP_BASE_URL}/signup?inviteCode=${inviteCode}`,
     });
   },
 );

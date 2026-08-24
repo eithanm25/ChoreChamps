@@ -5,6 +5,7 @@ import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
 import MessageBanner from '../components/MessageBanner';
+import GoogleAuthButton from '../components/GoogleAuthButton';
 
 interface LoginProps {
   onAuth: (token: string, user: SafeUser) => void;
@@ -13,10 +14,14 @@ interface LoginProps {
 type LoginMode = 'family' | 'parent-email';
 
 /**
- * Device-agnostic household login.
+ * Device-agnostic household login — two tabs:
+ *   - 'family': children only, via familyCode + name + PIN.
+ *   - 'parent-email': every parent, primary or co-, via email/password or Google
+ *     (identical for both — a co-parent has no separate login path once their
+ *     account exists; only /signup?inviteCode=... distinguishes how they joined).
  *
- * Reads ?family=CODE&username=NAME from the URL (the shape every invite link
- * now uses) and pre-fills the family-code form — but both fields stay fully
+ * Reads ?family=CODE&username=NAME from the URL (the shape a child's invite
+ * link uses) and pre-fills the family-code form — but both fields stay fully
  * editable, so a child on a friend's phone/school computer/new tablet can
  * clear them and log into a different account instead of being stuck with
  * whatever the link was for. Nothing here is a UUID or a saved per-device
@@ -138,7 +143,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                 mode === 'family' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              🏆 צ׳אמפ / הורה נוסף
+              🏆 צ׳אמפ
             </button>
             <button
               type="button"
@@ -147,7 +152,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                 mode === 'parent-email' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              👑 הורה ראשי
+              👑 הורים
             </button>
           </div>
         </nav>
@@ -156,7 +161,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
           {mode === 'family' ? (
             <p>💡 <strong>כניסה מכל מכשיר:</strong> הקלידו את קוד המשפחה בן 4 הספרות ואת השם הפרטי שלכם, בדיוק כפי שאבא/אמא הגדירו — ורק את ה-PIN הסודי צריך לזכור בעל פה. עובד גם על טלפון של חבר, מחשב בבית ספר, או כל מכשיר אחר.</p>
           ) : (
-            <p>💡 <strong>הורה ראשי:</strong> התחברו עם האימייל והסיסמה שנרשמתם איתם.</p>
+            <p>💡 <strong>הורים:</strong> הורה ראשי או הורה נוסף — כולם מתחברים באותו אופן, עם האימייל והסיסמה שנרשמתם איתם, או עם Google.</p>
           )}
         </div>
 
@@ -167,7 +172,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
             </div>
           )}
 
-          {/* טופס התחברות עם קוד משפחה — ילדים והורים נוספים */}
+          {/* טופס התחברות עם קוד משפחה — ילדים בלבד (הורים, גם נוספים, מתחברים בטאב "הורים") */}
           {mode === 'family' && (
             <form onSubmit={handleFamilyLoginSubmit} className="flex flex-col gap-4 w-full" autoComplete="off">
               <div className="flex flex-col gap-1 w-full">
@@ -226,6 +231,16 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
 
           {/* טופס התחברות הורה ראשי */}
           {mode === 'parent-email' && (
+            <>
+              <div className="mb-5 flex flex-col gap-3">
+                <GoogleAuthButton onAuth={onAuth} onError={(text) => setMessage({ type: 'error', text })} mode="login" />
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-slate-700/60" />
+                  <span className="text-[11px] text-slate-500 font-medium">או עם אימייל וסיסמה</span>
+                  <div className="h-px flex-1 bg-slate-700/60" />
+                </div>
+              </div>
+
             <form onSubmit={handleParentLoginSubmit} className="flex flex-col gap-4 w-full" autoComplete="off">
               <div className="flex flex-col gap-1 w-full">
                 <label className="text-slate-200 text-sm font-medium">כתובת אימייל</label>
@@ -265,6 +280,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                 {loading ? 'מתחברים...' : 'התחבר לאפליקציה'}
               </button>
             </form>
+            </>
           )}
 
           <p className="mt-5 text-center text-xs text-slate-400">

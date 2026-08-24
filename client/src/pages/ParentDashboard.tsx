@@ -29,21 +29,23 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [mainTab, setMainTab] = useState<MainTab>('family');
-  const [form, setForm] = useState({ name: '', password: '', role: 'child' as 'parent' | 'child' });
+  const [form, setForm] = useState({ name: '', password: '' });
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState({ title: '', description: '', basePrice: '', maxBonusPrice: '' , assignedToId: ''});
   const [taskLoading, setTaskLoading] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>([]); 
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [dashboardMessage, setDashboardMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  // תופס את שם/תפקיד החבר שנוצר ברגע היצירה, כדי שכפתור השיתוף לא יקרא בטעות
+  // תופס את שם הילד/ה שנוצר/ה ברגע היצירה, כדי שכפתור השיתוף לא יקרא בטעות
   // מה-form החי (שכבר התאפס לאחר ההצלחה, ועלול היה גם להשתנות בין ההוספה לשיתוף)
-  const [lastCreatedMember, setLastCreatedMember] = useState<{ name: string; role: 'parent' | 'child' } | null>(null);
+  const [lastCreatedMember, setLastCreatedMember] = useState<{ name: string } | null>(null);
   // מוצג בכותרת הדשבורד — נטען מחדש מהשרת (לא רק מ-user בזיכרון) כדי לעבוד נכון
   // גם אחרי רענון עמוד או עבור הורה נוסף שהצטרף בלי לעבור דרך יצירת המשפחה
   const [familyCode, setFamilyCode] = useState<string | null>(user.familyCode ?? null);
+  // מצב טעינה עבור יצירת קוד הזמנת הורה נוסף (מתחדש בכל לחיצה — חד-פעמי)
+  const [coParentInviteLoading, setCoParentInviteLoading] = useState(false);
 
 
   // שליפת חברי המשפחה מהשרת
@@ -90,7 +92,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
     setTaskForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // הוספת חבר משפחה חדש (אמא או ילד)
+  // הוספת ילד/ה חדש/ה למשפחה (הורים נוספים מצטרפים רק דרך הזמנת Google — ראו למטה)
   async function handleAddMember(e: SyntheticEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.password) return;
@@ -98,8 +100,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
     setFormLoading(true);
     setInviteLink(null);
     try {
-      const endpoint = form.role === 'child' ? '/api/family/add-child' : '/api/family/add-co-parent';
-      const response = await api.post(endpoint, {
+      const response = await api.post('/api/family/add-child', {
         name: form.name.trim(),
         password: form.password,
       });
@@ -108,12 +109,12 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
         setInviteLink(response.data.uniqueLink);
       }
       // נשמר כאן, לפני איפוס הטופס, כדי שכפתור השיתוף תמיד ידבר על החבר שבאמת נוצר
-      setLastCreatedMember({ name: form.name.trim(), role: form.role });
+      setLastCreatedMember({ name: form.name.trim() });
       setDashboardMessage({ type: 'success', text: `${form.name.trim()} נוסף/ה בהצלחה למערכת` });
-      setForm({ name: '', password: '', role: 'child' });
+      setForm({ name: '', password: '' });
       await refreshMembers();
     } catch (err: unknown) {
-      let errorMessage = 'שגיאה בהוספת בן משפחה';
+      let errorMessage = 'שגיאה בהוספת ילד/ה';
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.error || err.message;
       }
@@ -197,13 +198,11 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   }
 
     // פונקציית שיתוף חכמה התומכת במגירת השיתוף של הטלפון הנייד (Web Share API)
-  const handleShareInvite = async (memberName: string, role: string, link: string) => {
-    const roleText = role === 'child' ? "ילד/ה" : 'הורה מנהל';
-    
+  const handleShareInvite = async (memberName: string, link: string) => {
     // הטקסט המעוצב והחם שהמשפחה תקבל בוואטסאפ או במייל
     const shareData = {
       title: `הצטרפות לאפליקציית ChoreChamps 🏆`,
-      text: `היי ${memberName}, פתחתי לך חשבון מסוג ${roleText}.\nהצטרפו למשפחת ${familyName} והתחילו ליהנות מ-ChoreChamps! 🏆✨\n\nקוד המשפחה והשם שלכם כבר ממולאים בקישור, רק הקישו את ה-PIN שקבענו. עובד מכל מכשיר, גם אם תשכחו את הקישור אפשר תמיד להיכנס עם קוד המשפחה 🆔${familyCode ? ` (${familyCode})` : ''} והשם שלכם:\n`,
+      text: `היי ${memberName}, פתחתי לך חשבון של צ׳אמפ.\nהצטרפו למשפחת ${familyName} והתחילו ליהנות מ-ChoreChamps! 🏆✨\n\nקוד המשפחה והשם שלכם כבר ממולאים בקישור, רק הקישו את ה-PIN שקבענו. עובד מכל מכשיר, גם אם תשכחו את הקישור אפשר תמיד להיכנס עם קוד המשפחה 🆔${familyCode ? ` (${familyCode})` : ''} והשם שלכם:\n`,
       url: link // הקישור הקצר והחכם שלכם
     };
 
@@ -226,6 +225,41 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       } catch (err) {
         setDashboardMessage({ type: 'error', text: 'שגיאה בהעתקת הקישור' + String(err) });
       }
+    }
+  };
+
+  // יצירת קוד הזמנה חד-פעמי טרי (מבטל אוטומטית כל קוד קודם) ושיתופו מיד —
+  // ההורה לא מקליד שום שם/אימייל, ה-Google של ההורה השני הוא מקור האמת היחיד
+  const handleShareCoParentInvite = async () => {
+    setCoParentInviteLoading(true);
+    try {
+      const response = await api.post('/api/family/co-parent-invite');
+      const link: string = response.data.uniqueLink;
+
+      const shareData = {
+        title: 'הצטרפות כהורה נוסף ל-ChoreChamps 🏆',
+        text: `היי, בואו תצטרפו כהורה נוסף למשפחת ${familyName} ב-ChoreChamps! 👑\nלחצו על הקישור והתחברו עם חשבון Google כדי להצטרף מיד:\n`,
+        url: link,
+      };
+
+      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+        try {
+          await navigator.share(shareData);
+        } catch (err) {
+          console.log('השיתוף בוטל או נכשל', err);
+        }
+      } else {
+        await navigator.clipboard.writeText(`${shareData.text}${shareData.url}`);
+        setDashboardMessage({ type: 'success', text: '📋 קישור ההזמנה להורה נוסף הועתק בהצלחה' });
+      }
+    } catch (err: unknown) {
+      let errorMessage = 'שגיאה ביצירת קישור ההזמנה';
+      if (axios.isAxiosError(err)) {
+        errorMessage = err.response?.data?.error || err.message;
+      }
+      setDashboardMessage({ type: 'error', text: errorMessage });
+    } finally {
+      setCoParentInviteLoading(false);
     }
   };
 
@@ -346,23 +380,28 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
 
             {/* טופס הוספת חבר משפחה */}
             <section className="flex flex-col gap-4">
+              <div className="bg-gradient-to-b from-indigo-950/40 to-slate-900/40 border border-indigo-500/30 p-4 rounded-2xl shadow-xl flex flex-col gap-2">
+                <h3 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
+                  <span>👑</span> הזמינו הורה נוסף עם Google
+                </h3>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  שלחו קישור חד-פעמי להורה השני — הוא/היא יתחברו עם חשבון Google משלהם ויצטרפו מיד לקבוצה המשפחתית שלכם, בלי שתצטרכו להקליד עבורם שם או לקבוע סיסמה.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleShareCoParentInvite}
+                  disabled={coParentInviteLoading}
+                  className="w-full py-2 mt-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:from-indigo-600 transition-all disabled:opacity-50"
+                >
+                  <span>🌐</span> {coParentInviteLoading ? 'מייצר קישור...' : 'שיתוף קישור הזמנה להורה נוסף'}
+                </button>
+              </div>
+
               <h2 className="text-lg font-bold text-slate-300 flex items-center gap-2">
-                <span>➕</span> הוספת בן משפחה
+                <span>➕</span> הוספת ילד/ה למשפחה
               </h2>
               <div className="bg-slate-800/40 border border-slate-700/50 p-5 rounded-2xl shadow-xl">
                 <form onSubmit={handleAddMember} className="flex flex-col gap-4" autoComplete="off">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-slate-300 text-xs font-medium">תפקיד במשפחה</label>
-                    <select
-                      name="role"
-                      value={form.role}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm font-medium"
-                    >
-                      <option value="child">צ׳אמפ (ילד/ה) — מבצע משימות</option>
-                      <option value="parent">הורה נוסף (אמא/אבא) — מנהל חשבון</option>
-                    </select>
-                  </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-slate-300 text-xs font-medium">שם פרטי</label>
                     <input
@@ -378,7 +417,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-slate-300 text-xs font-medium">סיסמה או קוד PIN</label>
+                    <label className="text-slate-300 text-xs font-medium">קוד PIN</label>
                     <div className="relative w-full">
                     <input
                       type={showPassword ? 'text' : 'password'} // 🔥 משתנה דינמי לפי מצב הלחיצה
@@ -386,7 +425,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                       autoComplete="new-password"
                       value={form.password}
                       onChange={handleInputChange}
-                      placeholder={form.role === 'child' ? 'קבע קוד PIN של 4 ספרות' : 'קבע סיסמה ראשונית'}
+                      placeholder="קבע קוד PIN של 4 ספרות"
                       className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-left font-mono"
                       required
                       disabled={formLoading}
@@ -407,13 +446,13 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                     </button>
                   </div>
                   </div>
-                  
-                  <button 
-                    type="submit" 
+
+                  <button
+                    type="submit"
                     disabled={formLoading || !form.name.trim() || !form.password}
                     className="w-full py-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-bold shadow-md hover:from-indigo-600 hover:to-violet-600 transition-all disabled:opacity-50"
                   >
-                    {formLoading ? 'מייצר פרופיל...' : `פתח פרופיל ${form.role === 'child' ? 'ילד/ה' : 'הורה'}`}
+                    {formLoading ? 'מייצר פרופיל...' : 'פתח פרופיל ילד/ה'}
                   </button>
                 </form>
 
@@ -426,7 +465,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                   {/* כפתור השיתוף המרכזי שפותח את הוואטסאפ/אינסטגרם בנייד */}
                   <button
                     type="button"
-                    onClick={() => handleShareInvite(lastCreatedMember?.name || 'בן המשפחה', lastCreatedMember?.role || 'child', inviteLink)}
+                    onClick={() => handleShareInvite(lastCreatedMember?.name || 'הצ׳אמפ', inviteLink)}
                     className="w-full py-2.5 mt-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:from-emerald-600 transition-all border border-emerald-400/20"
                   >
                     <span>📲</span> לחצו לשיתוף מהיר (וואטסאפ, מייל וכו׳)

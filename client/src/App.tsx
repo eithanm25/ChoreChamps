@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import AuthPage from './pages/AuthPage';
 import Login from './pages/Login';
 import ParentOnboardingPage from './pages/ParentOnBoardingPage';
 import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
 import ChildDashboard from './pages/ChildDashboard';
+
+// Same env var name the .env file already uses (VITE_CLIENT_ID, not the
+// VITE_GOOGLE_CLIENT_ID a fresh setup might expect) — kept as-is rather than
+// asking for another .env edit. Falls back to '' so a missing/misconfigured
+// key only breaks the Google button, not the rest of the app (family-code and
+// email/password login keep working regardless).
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_CLIENT_ID ?? '';
 
 export type UserRole = 'parent' | 'child';
 export interface SafeUser {
@@ -19,18 +27,20 @@ export interface SafeUser {
 }
 
 export default function App(): React.ReactNode {
-  // '/login' always targets a specific profile (via ?family=&username=, or typed
-  // in by hand) — it must never silently reuse a session already sitting in this
-  // browser's localStorage (e.g. two tabs sharing one incognito window: tab 1 logs
-  // in as one family member, tab 2 opens a different member's invite link and must
-  // NOT inherit tab 1's session). useState's lazy initializer runs exactly once,
-  // before the first render, which is the correct place to do this — an effect
-  // running after mount would also catch the fresh session created by submitting
-  // this very page's own login form a moment later, logging it straight back out.
-  const isLoginPath = window.location.pathname === '/login';
+  // '/login' and '/signup' both target a specific action (via ?family=&username=
+  // or ?inviteCode=, or typed in by hand) — neither must ever silently reuse a
+  // session already sitting in this browser's localStorage (e.g. two tabs sharing
+  // one incognito window: tab 1 logs in as one family member, tab 2 opens a
+  // different member's invite link and must NOT inherit tab 1's session).
+  // useState's lazy initializer runs exactly once, before the first render, which
+  // is the correct place to do this — an effect running after mount would also
+  // catch the fresh session created by submitting this very page's own form a
+  // moment later, logging it straight back out.
+  const pathname = window.location.pathname;
+  const isEntryLinkPath = pathname === '/login' || pathname === '/signup';
 
   const [token, setToken] = useState<string | null>(() => {
-    if (isLoginPath) {
+    if (isEntryLinkPath) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       return null;
@@ -38,7 +48,7 @@ export default function App(): React.ReactNode {
     return localStorage.getItem('token');
   });
   const [user, setUser] = useState<SafeUser | null>(() => {
-    if (isLoginPath) {
+    if (isEntryLinkPath) {
       return null;
     }
     const savedUser = localStorage.getItem('user');
@@ -69,6 +79,7 @@ export default function App(): React.ReactNode {
 
 
   return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} locale="iw">
     <BrowserRouter>
       <Routes>
         {/* עמוד הבית — הרשמת הורה חדש, או הפניה לדשבורד אם כבר מחוברים */}
@@ -91,7 +102,28 @@ export default function App(): React.ReactNode {
           }
         />
 
-        {/* מסך התחברות אחיד — קוד משפחה + שם (ילדים/הורה נוסף) או אימייל (הורה ראשי).
+        {/* כינוי מפורש ל-/ — זהו היעד של קישור הזמנת הורה נוסף:
+            /signup?inviteCode=... (ראו AuthPage.tsx להבחנה בין המצבים) */}
+        <Route
+          path="/signup"
+          element={
+            token && user ? (
+              user.role === 'parent' ? (
+                !user.familyId ? (
+                  <Navigate to="/onboarding" replace />
+                ) : (
+                  <Navigate to="/parent-dashboard" replace />
+                )
+              ) : (
+                <Navigate to="/child-dashboard" replace />
+              )
+            ) : (
+              <AuthPage onAuth={handleAuth} />
+            )
+          }
+        />
+
+        {/* מסך התחברות אחיד — קוד משפחה + שם (ילדים) או אימייל/Google (הורים).
             זהו גם היעד של קישורי ההזמנה: /login?family=CODE&username=NAME */}
         <Route
           path="/login"
@@ -147,5 +179,6 @@ export default function App(): React.ReactNode {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </GoogleOAuthProvider>
   );
 }

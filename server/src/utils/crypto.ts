@@ -35,6 +35,16 @@ export function generateInviteCode(): string {
 }
 
 /**
+ * Generate a short single-use co-parent invite code (8 hex chars) — shorter
+ * than generateInviteCode's 12, matching the "short" requirement for a code
+ * meant to be typed or pasted into a URL and used exactly once before being
+ * cleared by the server.
+ */
+export function generateShortInviteCode(): string {
+  return randomBytes(4).toString('hex').toUpperCase();
+}
+
+/**
  * Generate a 4-digit numeric household code (e.g. "4092") for device-agnostic
  * login. Uniqueness against existing families is the caller's responsibility
  * (see generateFamilyCode in family.routes.ts) — a random 4-digit code alone
