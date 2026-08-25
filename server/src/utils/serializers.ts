@@ -1,4 +1,4 @@
-import { Task } from '../entities/Task';
+import { Task, TaskStatus } from '../entities/Task';
 
 export interface PublicMember {
   id: string;
@@ -40,6 +40,13 @@ export interface TaskDto {
   createdAt: Date;
   assignedTo: PublicMember | null;
   createdBy: PublicMember | null;
+  /**
+   * The parent's reference/target photo, if the task has one — null once the
+   * task is approved, since the file is deleted at that point (see
+   * taskReview.ts) even though the DB column itself is left populated,
+   * matching how Submission.photoUrls already behaves after approval.
+   */
+  referencePhotoUrl: string | null;
   submission: {
     id: string;
     photoUrls: string[];
@@ -64,6 +71,10 @@ export function toTaskDto(task: Task): TaskDto {
     createdAt: task.createdAt,
     assignedTo: toPublicMember(task.assignedTo),
     createdBy: toPublicMember(task.createdBy),
+    referencePhotoUrl:
+      task.status !== TaskStatus.APPROVED && task.referencePhotoUrl
+        ? toPublicPhotoUrl(task.referencePhotoUrl)
+        : null,
     submission: task.submission
       ? {
           id: task.submission.id,

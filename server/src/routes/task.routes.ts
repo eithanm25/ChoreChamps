@@ -13,7 +13,7 @@ import {
 } from '../middleware/auth';
 import { canAcceptTask, canCancelSubmission, childHasPendingTask } from '../services/taskGuardrails';
 import { parseReviewAction, runReview } from '../services/taskReview';
-import { reviewChorePhoto } from '../services/aiVision';
+import { reviewChorePhoto, MAX_EXECUTION_PHOTOS } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import multer from 'multer';
@@ -34,7 +34,7 @@ const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_PHOTO_BYTES, files: 5 },
+  limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_EXECUTION_PHOTOS },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       cb(new Error('רק קבצי תמונה מותרים'));
@@ -44,21 +44,38 @@ const upload = multer({
   },
 });
 
+function multerErrorMessage(err: unknown): string {
+  return err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+    ? 'כל תמונה חייבת להיות עד 8MB'
+    : err instanceof Error
+      ? err.message
+      : 'שגיאה בהעלאת הקבצים';
+}
+
 /**
  * Wraps upload.array so a rejected file (wrong type, too large, too many)
  * reaches the client as a 400 instead of falling through to Express's default
  * error handler, which would return an opaque 500 with a stack trace.
  */
 function handlePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  upload.array('photos', 5)(req, res, (err: unknown) => {
+  upload.array('photos', MAX_EXECUTION_PHOTOS)(req, res, (err: unknown) => {
     if (err) {
-      const message =
-        err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
-          ? 'כל תמונה חייבת להיות עד 8MB'
-          : err instanceof Error
-            ? err.message
-            : 'שגיאה בהעלאת הקבצים';
-      res.status(400).json({ error: message });
+      res.status(400).json({ error: multerErrorMessage(err) });
+      return;
+    }
+    next();
+  });
+}
+
+/**
+ * Optional single-file upload for the parent's reference photo (blank
+ * worksheet/test, or a golden-standard chore example) at task creation.
+ * Absent is fine — req.file simply stays undefined.
+ */
+function handleReferencePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  upload.single('referencePhoto')(req, res, (err: unknown) => {
+    if (err) {
+      res.status(400).json({ error: multerErrorMessage(err) });
       return;
     }
     next();
@@ -69,12 +86,17 @@ const router = Router();
 
 /**
  * POST /api/tasks/
- * Parent creates a new task for their family.
+ * Parent creates a new task for their family. Accepts multipart/form-data with
+ * an optional single 'referencePhoto' file (a blank worksheet/test to grade
+ * against, or a "golden standard" example of a finished chore) — but a plain
+ * JSON body still works too, since express.json() already parses it before
+ * this route's multer middleware runs and multer skips non-multipart requests.
  */
 router.post(
   '/',
   requireAuth,
   requireParent,
+  handleReferencePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
     const { title, description, basePrice, maxBonusPrice, assignedToId } = req.body as {
       title?: string;
@@ -89,7 +111,12 @@ router.post(
       return;
     }
 
-    if (typeof basePrice !== 'number' || typeof maxBonusPrice !== 'number') {
+    // basePrice/maxBonusPrice arrive as real numbers from a JSON body, or as
+    // strings from multipart form fields (FormData always stringifies) — Number()
+    // handles both, and NaN correctly rejects anything that's neither.
+    const parsedBasePrice = Number(basePrice);
+    const parsedMaxBonusPrice = Number(maxBonusPrice);
+    if (!Number.isFinite(parsedBasePrice) || !Number.isFinite(parsedMaxBonusPrice)) {
       res.status(400).json({ error: 'basePrice and maxBonusPrice are required and must be numbers' });
       return;
     }
@@ -133,15 +160,18 @@ router.post(
       assignedChild = childUser;
     }
 
+    const referencePhotoFile = req.file as Express.Multer.File | undefined;
+
     const task = taskRepo.create({
       title,
       description: description ?? '',
-      basePrice: basePrice.toFixed(2),
-      maxBonusPrice: maxBonusPrice.toFixed(2),
+      basePrice: parsedBasePrice.toFixed(2),
+      maxBonusPrice: parsedMaxBonusPrice.toFixed(2),
       status: taskStatus,
       family: parent.family,
       createdBy: parent,
       assignedTo: assignedChild,
+      referencePhotoUrl: referencePhotoFile ? referencePhotoFile.filename : null,
     });
 
     await taskRepo.save(task);
@@ -464,7 +494,10 @@ router.post(
       // hold a DB transaction open. reviewChorePhoto never throws — it returns
       // null when the review is unavailable.
       const aiSummary = await reviewChorePhoto({
-        absolutePath: files[0].path,
+        executionPhotoPaths: files.map((file) => file.path),
+        referencePhotoPath: task.referencePhotoUrl
+          ? resolveUploadPath(task.referencePhotoUrl)
+          : null,
         title: task.title,
         description: task.description,
       });
@@ -677,7 +710,11 @@ router.delete(
 
       // A 'completed' or 'rejected' task still has a submission row — the DB
       // cascades that delete, but the proof photo files on disk are ours to clean up.
-      const photoUrls = task.submission?.photoUrls ?? [];
+      // The parent's reference photo (if any) is cleaned up the same way.
+      const photoUrls = [
+        ...(task.submission?.photoUrls ?? []),
+        ...(task.referencePhotoUrl ? [task.referencePhotoUrl] : []),
+      ];
 
       await taskRepo.remove(task);
       await deleteLocalPhotos(photoUrls);

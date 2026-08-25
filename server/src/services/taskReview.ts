@@ -96,7 +96,7 @@ export async function runReview(
     return { ok: false, status: 409, error: 'למשימה זו אין ילד משויך' };
   }
 
-  const photoUrls = task.submission?.photoUrls ?? [];
+  const submissionPhotoUrls = task.submission?.photoUrls ?? [];
 
   if (review.action === 'reject') {
     const transition = await manager
@@ -122,13 +122,16 @@ export async function runReview(
       await manager.delete(Submission, { taskId: task.id });
     }
 
+    // The reference photo (if any) is deliberately NOT deleted here — a
+    // rejected task goes back for rework, and the child needs it to see what
+    // they're re-matching against on resubmission.
     return {
       ok: true,
       action: 'reject',
       taskId: task.id,
       rejectionNote: review.note,
       rejectionCount: task.rejectionCount + 1,
-      photoUrls,
+      photoUrls: submissionPhotoUrls,
     };
   }
 
@@ -173,6 +176,13 @@ export async function runReview(
     .where('id = :childId', { childId })
     .setParameters({ totalPayout, awardedBonus })
     .execute();
+
+  // Approval closes out the task's learning/comparison cycle for good, so the
+  // parent's reference photo is cleaned up here too, alongside the child's
+  // submission photos — nothing is left to compare against anymore.
+  const photoUrls = task.referencePhotoUrl
+    ? [...submissionPhotoUrls, task.referencePhotoUrl]
+    : submissionPhotoUrls;
 
   return {
     ok: true,

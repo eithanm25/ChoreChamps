@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
-import api from '../services/api';
+import api, { resolvePhotoUrl } from '../services/api';
 import type { SafeUser } from '../App';
 import MessageBanner from '../components/MessageBanner';
 import { usePolling } from '../hooks/usePolling';
+
+/** Matches the server's aiVision MAX_EXECUTION_PHOTOS — kept in sync manually since it can't be imported cross-project. */
+const MAX_EXECUTION_PHOTOS = 3;
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -36,6 +39,8 @@ interface Task {
   status: 'open' | 'pending' | 'completed' | 'rejected' | 'approved';
   assignedTo: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
+  /** Blank worksheet/test to answer, or "golden standard" chore example, if the parent attached one. */
+  referencePhotoUrl: string | null;
   submission?: Submission | null;
 }
 
@@ -104,7 +109,14 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const filesArray = Array.from(e.target.files);
+      const remainingSlots = MAX_EXECUTION_PHOTOS - selectedPhotos.length;
+      const filesArray = Array.from(e.target.files).slice(0, Math.max(0, remainingSlots));
+
+      if (filesArray.length === 0) {
+        setMessage({ type: 'error', text: `אפשר לצרף עד ${MAX_EXECUTION_PHOTOS} תמונות למשימה` });
+        e.target.value = '';
+        return;
+      }
 
       // שומרים את הקבצים האמיתיים בסטייט
       setSelectedPhotos(prev => [...prev, ...filesArray]);
@@ -112,6 +124,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
       // מייצרים כתובות אינטרנט זמניות בדפדפן רק בשביל ה-Preview הויזואלי
       const newPreviews = filesArray.map(file => URL.createObjectURL(file));
       setPreviewUrls(prev => [...prev, ...newPreviews]);
+      e.target.value = '';
     }
   };
 
@@ -225,15 +238,15 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
 
       {/* כפתור המצלמה/העלאה המעוצב לנייד */}
       <div className="flex flex-col gap-2">
-        <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold">
-          <span>📷</span> {selectedPhotos.length > 0 ? 'צלם/הוסף עוד תמונה' : 'לחץ כאן כדי לצלם את העבודה'}
+        <label className={`w-full py-3 bg-slate-800 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 transition-colors text-slate-300 font-bold ${selectedPhotos.length >= MAX_EXECUTION_PHOTOS ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-700 cursor-pointer'}`}>
+          <span>📷</span> {selectedPhotos.length >= MAX_EXECUTION_PHOTOS ? `הגעתם למקסימום ${MAX_EXECUTION_PHOTOS} תמונות` : selectedPhotos.length > 0 ? `צלם/הוסף עוד תמונה (${selectedPhotos.length}/${MAX_EXECUTION_PHOTOS})` : 'לחץ כאן כדי לצלם את העבודה'}
           <input
             type="file"
             accept="image/*"
             multiple
             onChange={handlePhotoChange}
             className="hidden"
-            disabled={actionLoading}
+            disabled={actionLoading || selectedPhotos.length >= MAX_EXECUTION_PHOTOS}
           />
         </label>
       </div>
@@ -368,6 +381,13 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                     </span>
                   </div>
 
+                  {myPendingTask.referencePhotoUrl && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-slate-400 text-[10px] font-bold">📎 דף העבודה / התקן שצריך להשלים:</span>
+                      <img src={resolvePhotoUrl(myPendingTask.referencePhotoUrl)} alt="תמונת ייחוס למשימה" className="w-28 h-28 object-cover rounded-lg border border-indigo-500/40 shadow-md" />
+                    </div>
+                  )}
+
                   {submittingTaskId !== myPendingTask.id ? (
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
                       <div className="flex gap-4 text-xs font-bold text-slate-300">
@@ -448,6 +468,13 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                         <div className="bg-slate-900/50 border border-rose-500/10 rounded-xl p-3 flex flex-col gap-1">
                           <span className="text-[10px] text-rose-300 font-bold">💬 מה {task.createdBy?.name || 'ההורים'} ביקשו לתקן:</span>
                           <p className="text-slate-300 text-xs leading-relaxed">{task.rejectionNote}</p>
+                        </div>
+                      )}
+
+                      {task.referencePhotoUrl && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-slate-400 text-[10px] font-bold">📎 דף העבודה / התקן להשוואה:</span>
+                          <img src={resolvePhotoUrl(task.referencePhotoUrl)} alt="תמונת ייחוס למשימה" className="w-28 h-28 object-cover rounded-lg border border-rose-500/40 shadow-md" />
                         </div>
                       )}
 

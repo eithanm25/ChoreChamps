@@ -31,6 +31,8 @@ export interface Task {
   status: 'open' | 'pending' | 'completed' | 'rejected' | 'approved';
   assignedTo: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
+  /** Blank worksheet/test, or "golden standard" chore example — null once approved (file is deleted then). */
+  referencePhotoUrl: string | null;
   submission?: Submission | null;
 }
 
@@ -479,6 +481,12 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
                     {/* === טאב מחכות לאישור === */}
                     {activeTab === 'pending-approval' && task.submission && (
                       <div className="flex flex-col gap-3 pt-2 bg-slate-900/40 p-3 rounded-xl ring-1 ring-slate-700/30">
+                        {task.referencePhotoUrl && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-slate-400 font-medium">📎 תמונת הייחוס שצירפתם:</span>
+                            <img src={resolvePhotoUrl(task.referencePhotoUrl)} alt="תמונת ייחוס" className="w-20 h-20 object-cover rounded-lg border border-indigo-700/60" />
+                          </div>
+                        )}
                         {task.submission.photoUrls && task.submission.photoUrls.length > 0 && (
                           <div className="flex flex-col gap-1">
                             <span className="text-[11px] text-slate-400 font-medium">📸 הוכחות ויזואליות מהילד:</span>

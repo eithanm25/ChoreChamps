@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
@@ -35,6 +35,22 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState({ title: '', description: '', basePrice: '', maxBonusPrice: '' , assignedToId: ''});
   const [taskLoading, setTaskLoading] = useState(false);
+  // תמונת ייחוס אופציונלית (דף עבודה ריק למבחן, או תקן ניקיון לדוגמה) שההורה
+  // מצרף בעת יצירת המשימה — משמשת את ה-AI להשוואה מול התמונות שהילד ישלח
+  const [referencePhoto, setReferencePhoto] = useState<File | null>(null);
+  const [referencePhotoPreview, setReferencePhotoPreview] = useState<string | null>(null);
+  // מנקה את ה-blob URL האחרון גם אם הרכיב יורד מהמסך באמצע מילוי הטופס
+  const referencePhotoPreviewRef = useRef<string | null>(null);
+  useEffect(() => {
+    referencePhotoPreviewRef.current = referencePhotoPreview;
+  }, [referencePhotoPreview]);
+  useEffect(() => {
+    return () => {
+      if (referencePhotoPreviewRef.current) {
+        URL.revokeObjectURL(referencePhotoPreviewRef.current);
+      }
+    };
+  }, []);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [dashboardMessage, setDashboardMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -150,6 +166,24 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   };
 
 
+  // בחירת תמונת ייחוס אופציונלית (דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה)
+  const handleReferencePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (referencePhotoPreview) {
+      URL.revokeObjectURL(referencePhotoPreview);
+    }
+    setReferencePhoto(file);
+    setReferencePhotoPreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  const clearReferencePhoto = () => {
+    if (referencePhotoPreview) {
+      URL.revokeObjectURL(referencePhotoPreview);
+    }
+    setReferencePhoto(null);
+    setReferencePhotoPreview(null);
+  };
+
   async function handleCreateTask(e: SyntheticEvent) {
     e.preventDefault();
     const { title, description, basePrice, maxBonusPrice } = taskForm;
@@ -157,17 +191,23 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
 
     setTaskLoading(true);
     try {
-      // שליחת המשימה החדשה לשרת
-      const response = await api.post('/api/tasks', {
-        title: title.trim(),
-        description: description.trim(),
-        basePrice: Number(basePrice),
-        maxBonusPrice: Number(maxBonusPrice),
-        assignedToId: taskForm.assignedToId || null, // אם לא נבחר ילד ספציפי, נשלח null
-      });
+      // FormData במקום JSON כדי לתמוך בצירוף תמונת הייחוס האופציונלית
+      const formData = new FormData();
+      formData.append('title', title.trim());
+      formData.append('description', description.trim());
+      formData.append('basePrice', String(Number(basePrice)));
+      formData.append('maxBonusPrice', String(Number(maxBonusPrice)));
+      if (taskForm.assignedToId) {
+        formData.append('assignedToId', taskForm.assignedToId);
+      }
+      if (referencePhoto) {
+        formData.append('referencePhoto', referencePhoto);
+      }
+
+      const response = await api.post('/api/tasks', formData);
 
       setSuccessMessage(`המשימה: "${title.trim()}" פורסמה בהצלחה ללוח הביתי! 🎉`);
-      
+
       // העלמה אוטומטית של ההודעה מהמסך אחרי 4 שניות
       setTimeout(() => {
         setSuccessMessage(null);
@@ -176,13 +216,14 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (response.data.task) {
         setTasks(prevTasks => [response.data.task, ...prevTasks]);
       }
-      
+
       // איפוס הטופס ורענון רשימת המשפחה (כדי לעדכן את כמות המשימות שההורה העלה)
       setTaskForm({ title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '' });
-      setMembers(prevMembers => 
-        prevMembers.map(member => 
-          member.id === user.id 
-            ? { ...member, totalTasksUploaded: (member.totalTasksUploaded || 0) + 1 } 
+      clearReferencePhoto();
+      setMembers(prevMembers =>
+        prevMembers.map(member =>
+          member.id === user.id
+            ? { ...member, totalTasksUploaded: (member.totalTasksUploaded || 0) + 1 }
             : member
         )
       );
@@ -538,6 +579,39 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                             <option key={child.id} value={child.id}>👦 {child.name}</option>
                           ))}
                       </select>
+                    </div>
+
+                    {/* תמונת ייחוס אופציונלית — דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-200 text-sm font-medium">📎 תמונת ייחוס למשימה (אופציונלי)</label>
+                      <p className="text-slate-500 text-[11px] leading-relaxed mb-1">
+                        דף עבודה/מבחן ריק לבדיקת שיעורי בית, או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את התמונה שהילד/ה ישלחו מולה.
+                      </p>
+                      {!referencePhotoPreview ? (
+                        <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold text-sm">
+                          <span>📷</span> העלאת תמונת ייחוס
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleReferencePhotoChange}
+                            className="hidden"
+                            disabled={taskLoading}
+                          />
+                        </label>
+                      ) : (
+                        <div className="relative w-24 h-24">
+                          <img src={referencePhotoPreview} alt="תצוגה מקדימה של תמונת הייחוס" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
+                          <button
+                            type="button"
+                            onClick={clearReferencePhoto}
+                            disabled={taskLoading}
+                            className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black shadow-md cursor-pointer select-none"
+                            title="הסר תמונה"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

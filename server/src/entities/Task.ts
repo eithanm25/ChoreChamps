@@ -68,6 +68,17 @@ export class Task {
   @Column({ type: 'int', default: 0 })
   rejectionCount!: number;
 
+  /**
+   * Optional reference photo the parent uploads when creating the task — a
+   * blank worksheet/test to grade against, or a "golden standard" example of a
+   * finished chore. Stored the same way as Submission.photoUrls (a bare local
+   * filename under uploads/). Deleted once the task is approved (see
+   * deleteLocalPhotos in task.routes.ts) — the learning/chore cycle is done by
+   * then, so there's nothing left to compare against.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  referencePhotoUrl!: string | null;
+
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.OPEN })
   status!: TaskStatus;
 
