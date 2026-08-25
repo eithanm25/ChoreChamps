@@ -4,6 +4,7 @@ import axios from 'axios';
 import api from '../services/api';
 import type { SafeUser } from '../App';
 import ParentTasksList, { type Task } from '../components/ParentTasksList';
+import ParentRewardsPanel from '../components/ParentRewardsPanel';
 import MessageBanner from '../components/MessageBanner';
 import { usePolling } from '../hooks/usePolling';
 
@@ -23,7 +24,7 @@ export interface FamilyMember {
   lifetimeEarnings?: number;
 }
 
-type MainTab = 'family' | 'tasks';
+type MainTab = 'family' | 'tasks' | 'rewards';
 
 export default function ParentDashboard({ user, onLogout }: DashboardProps): React.ReactNode {
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -345,11 +346,11 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
           </button>
         </header>
 
-        <nav className="bg-slate-800/40 p-1.5 rounded-full ring-1 ring-slate-700/50 flex gap-2 w-full max-w-sm">
+        <nav className="bg-slate-800/40 p-1.5 rounded-full ring-1 ring-slate-700/50 flex gap-2 w-full max-w-lg overflow-x-auto">
           <button
             type="button"
             onClick={() => setMainTab('family')}
-            className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${
+            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
               mainTab === 'family' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -358,11 +359,20 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
           <button
             type="button"
             onClick={() => setMainTab('tasks')}
-            className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${
+            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
               mainTab === 'tasks' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             📋 לוח המשימות ופרסום
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainTab('rewards')}
+            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+              mainTab === 'rewards' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            🎁 חנות הפרסים
           </button>
         </nav>
 
@@ -672,6 +682,9 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
             </section>
           </div>
         )}
+
+        {/* === טאב 3: חנות הפרסים — פרסום תגמולים וניהול הקטלוג === */}
+        {mainTab === 'rewards' && <ParentRewardsPanel />}
 
       </div>
     </div>

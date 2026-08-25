@@ -5,6 +5,7 @@ import api, { resolvePhotoUrl } from '../services/api';
 import type { SafeUser } from '../App';
 import MessageBanner from '../components/MessageBanner';
 import { usePolling } from '../hooks/usePolling';
+import ChildRewardsStore from '../components/ChildRewardsStore';
 
 /** Matches the server's aiVision MAX_EXECUTION_PHOTOS — kept in sync manually since it can't be imported cross-project. */
 const MAX_EXECUTION_PHOTOS = 3;
@@ -50,9 +51,11 @@ interface FamilyMember {
   role: 'parent' | 'child';
   lifetimeTasksCount?: number;
   lifetimeEarnings?: number;
+  /** Spendable ChoreCoins right now — distinct from lifetimeEarnings above (a cumulative-forever stat). */
+  balance?: number;
 }
 
-type ChildTab = 'tasks-hub' | 'family-leaderboard';
+type ChildTab = 'tasks-hub' | 'rewards-store' | 'family-leaderboard';
 
 export default function ChildDashboard({ user, onLogout }: ChildDashboardProps): React.ReactNode {
   const [activeMainTab, setActiveMainTab] = useState<ChildTab>('tasks-hub');
@@ -324,15 +327,16 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 p-5 rounded-2xl shadow-xl flex items-center gap-4 relative overflow-hidden">
           <div className="text-3xl animate-bounce">🪙</div>
           <div>
-            <span className="text-slate-400 text-xs font-bold block">כסף שצברתי עד כה:</span>
-            <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalance} ₪</span>
+            <span className="text-slate-400 text-xs font-bold block">כמות המטבעות בחשבון שלי</span>
+            <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalance}</span>
           </div>
         </div>
 
         {/* בורר טאבים אפליקטיבי */}
-        <nav className="bg-slate-800/40 p-1 rounded-full ring-1 ring-slate-700/40 flex max-w-xs text-xs font-bold">
-          <button onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }} className={`flex-1 py-2 rounded-full transition-all ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎯 משימות וחטיפה</button>
-          <button onClick={() => setActiveMainTab('family-leaderboard')} className={`flex-1 py-2 rounded-full transition-all ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>👥 חברי המשפחה</button>
+        <nav className="bg-slate-800/40 p-1 rounded-full ring-1 ring-slate-700/40 flex max-w-lg text-[11px] sm:text-xs font-bold overflow-x-auto">
+          <button onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎯 משימות וחטיפה</button>
+          <button onClick={() => setActiveMainTab('rewards-store')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'rewards-store' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎁 חנות הפרסים שלי</button>
+          <button onClick={() => setActiveMainTab('family-leaderboard')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>👥 חברי המשפחה</button>
         </nav>
 
         {/* === טאב 1: לוח משימות פתוחות + המשימה הפעילה שלי === */}
@@ -497,7 +501,12 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
           </div>
         )}
 
-        {/* === טאב 2: רשימת בני משפחה וצפייה בפרופיל של אחים ואחיות === */}
+        {/* === טאב 2: חנות הפרסים — פרסים אישיים ויעד משפחתי משותף === */}
+        {activeMainTab === 'rewards-store' && (
+          <ChildRewardsStore user={user} balance={currentChildProfile?.balance ?? 0} />
+        )}
+
+        {/* === טאב 3: רשימת בני משפחה וצפייה בפרופיל של אחים ואחיות === */}
         {activeMainTab === 'family-leaderboard' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
             <section className="md:col-span-1 flex flex-col gap-2">

@@ -10,8 +10,18 @@ import { User } from './User';
 /**
  * Allowance ledger for a child user.
  *
- * Balance and bonus totals live here — not on User — so only children carry
- * spendable allowance. Each child's earnings are independent (no sibling competition).
+ * lifetimeEarnings is the single source of truth for "money earned" — every
+ * task approval adds to it, and it never decreases (a true lifetime total,
+ * including base price + bonus; a task's own bonus amount stays visible on
+ * the Task row itself, this is just the running sum). There is deliberately
+ * no separate stored "spendable balance" column: spending is tracked purely
+ * as reward-contribution ledger rows (see RewardContribution), and the
+ * amount a child can spend right now is always computed on demand as
+ * lifetimeEarnings minus the sum of their contributions to still-valid
+ * (non-archived) rewards — see rewardStore.getSpendableBalance. A stored
+ * balance that both this and the rewards flow would need to keep in lockstep
+ * is exactly the kind of two-copies-of-the-truth setup that drifts out of
+ * sync; a single ledger can't.
  *
  * Primary key mirrors the linked User id (shared PK via OneToOne JoinColumn).
  */
@@ -24,15 +34,7 @@ export class ChildProfile {
   @JoinColumn({ name: 'id' })
   user!: User;
 
-  /** Current spendable allowance balance. */
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  balance!: string;
-
-  /** Lifetime bonus earnings (excludes base price). */
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  totalBonusEarned!: string;
-
-  /** Lifetime earnings including base price + bonuses. */
+  /** Lifetime earnings including base price + bonuses. Never decreases. */
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   lifetimeEarnings!: string;
 

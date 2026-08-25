@@ -6,6 +6,7 @@ import { AppDataSource } from './data-source';
 import authRoutes from './routes/auth.routes';
 import familyRoutes from './routes/family.routes';
 import taskRoutes from './routes/task.routes';
+import rewardRoutes from './routes/reward.routes';
 import { UPLOADS_DIR } from './utils/uploads';
 
 dotenv.config();
@@ -22,6 +23,7 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 app.use('/api/auth', authRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/rewards', rewardRoutes);
 
 async function bootstrap(): Promise<void> {
   try {

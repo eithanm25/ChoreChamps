@@ -2,6 +2,7 @@ import type { EntityManager } from 'typeorm';
 import { Task, TaskStatus } from '../entities/Task';
 import { Submission } from '../entities/Submission';
 import { ChildProfile } from '../entities/ChildProfile';
+import { toCents, fromCents } from '../utils/money';
 
 export type ReviewAction =
   | { action: 'approve'; finalScore: number }
@@ -56,14 +57,6 @@ export function parseReviewAction(body: unknown): ReviewAction | { error: string
   }
 
   return { error: "action must be either 'approve' or 'reject'" };
-}
-
-function toCents(amount: string): number {
-  return Math.round(parseFloat(amount) * 100);
-}
-
-function fromCents(cents: number): string {
-  return (cents / 100).toFixed(2);
 }
 
 /**
@@ -163,18 +156,19 @@ export async function runReview(
   }
 
   // Incremented in SQL so concurrent approvals for different tasks belonging to
-  // the same child can never lose an update.
+  // the same child can never lose an update. lifetimeEarnings is the only
+  // money ledger on ChildProfile — spendable balance is derived from it
+  // elsewhere (rewardStore.getSpendableBalance), not tracked as a second
+  // stored number here.
   await manager
     .createQueryBuilder()
     .update(ChildProfile)
     .set({
-      balance: () => '"balance" + CAST(:totalPayout AS numeric)',
-      totalBonusEarned: () => '"totalBonusEarned" + CAST(:awardedBonus AS numeric)',
       lifetimeTasksCount: () => '"lifetimeTasksCount" + 1',
       lifetimeEarnings: () => '"lifetimeEarnings" + CAST(:totalPayout AS numeric)',
     })
     .where('id = :childId', { childId })
-    .setParameters({ totalPayout, awardedBonus })
+    .setParameters({ totalPayout })
     .execute();
 
   // Approval closes out the task's learning/comparison cycle for good, so the

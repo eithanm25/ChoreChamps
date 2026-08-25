@@ -197,8 +197,6 @@ router.post(
     const profile = profileRepo.create({
       id: child.id,
       user: child,
-      balance: '0',
-      totalBonusEarned: '0',
     });
 
     await profileRepo.save(profile);
@@ -211,7 +209,6 @@ router.post(
         name: child.name,
         role: child.role,
         familyId: parent.family.id,
-        balance: profile.balance,
       },
       uniqueLink,
     });
