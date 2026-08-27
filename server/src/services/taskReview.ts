@@ -156,16 +156,14 @@ export async function runReview(
   }
 
   // Incremented in SQL so concurrent approvals for different tasks belonging to
-  // the same child can never lose an update. lifetimeEarnings is the only
-  // money ledger on ChildProfile — spendable balance is derived from it
-  // elsewhere (rewardStore.getSpendableBalance), not tracked as a second
-  // stored number here.
+  // the same child can never lose an update. balance is the only money ledger
+  // on ChildProfile — see the entity's docstring.
   await manager
     .createQueryBuilder()
     .update(ChildProfile)
     .set({
       lifetimeTasksCount: () => '"lifetimeTasksCount" + 1',
-      lifetimeEarnings: () => '"lifetimeEarnings" + CAST(:totalPayout AS numeric)',
+      balance: () => '"balance" + CAST(:totalPayout AS numeric)',
     })
     .where('id = :childId', { childId })
     .setParameters({ totalPayout })

@@ -27,6 +27,7 @@ export interface RewardDto {
   remaining: string;
   progressPercent: number;
   affiliateUrl: string | null;
+  imageUrl: string | null;
   targetChild: PublicMember | null;
   createdBy: PublicMember | null;
   fulfilledBy: PublicMember | null;

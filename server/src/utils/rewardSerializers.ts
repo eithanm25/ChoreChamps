@@ -21,6 +21,7 @@ export interface RewardDto {
   remaining: string;
   progressPercent: number;
   affiliateUrl: string | null;
+  imageUrl: string | null;
   targetChild: PublicMember | null;
   createdBy: PublicMember | null;
   fulfilledBy: PublicMember | null;
@@ -54,6 +55,7 @@ export function toRewardDto(reward: Reward): RewardDto {
     remaining: fromCents(Math.max(0, targetCents - totalCents)),
     progressPercent: targetCents > 0 ? Math.min(100, Math.round((totalCents / targetCents) * 100)) : 0,
     affiliateUrl: reward.affiliateUrl,
+    imageUrl: reward.imageUrl,
     targetChild: toPublicMember(reward.targetChild),
     createdBy: toPublicMember(reward.createdBy),
     fulfilledBy: toPublicMember(reward.fulfilledBy),

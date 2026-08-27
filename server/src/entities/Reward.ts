@@ -81,6 +81,10 @@ export class Reward {
   @Column({ type: 'varchar', length: 1024, nullable: true })
   affiliateUrl!: string | null;
 
+  /** Product image — marketplace rewards only, bound automatically from the parent's catalog picker selection. */
+  @Column({ type: 'varchar', length: 1024, nullable: true })
+  imageUrl!: string | null;
+
   /** The one child this reward is for — individual rewards only. Always null for collaborative (visible to every child). */
   @Column({ type: 'uuid', nullable: true })
   targetChildId!: string | null;

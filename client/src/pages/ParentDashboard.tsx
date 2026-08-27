@@ -21,7 +21,8 @@ export interface FamilyMember {
   familyName: string;
   totalTasksUploaded?: number;
   lifetimeTasksCount?: number;
-  lifetimeEarnings?: number;
+  /** Spendable ChoreCoins right now — the only money ledger; incremented/decremented directly by earn/spend actions. */
+  balance?: number;
 }
 
 type MainTab = 'family' | 'tasks' | 'rewards';
@@ -417,7 +418,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                       ) : (
                         <div className="flex flex-col gap-1 mt-1 font-medium">
                           <p className="text-emerald-400">🏆 סך משימות שביצע אי פעם: {member.lifetimeTasksCount || 0}</p>
-                          <p className="text-amber-400">💰 סך כל כסף שהרוויח מאז ומעולם: {member.lifetimeEarnings || 0} ₪</p>
+                          <p className="text-amber-400">💰 יתרת מטבעות זמינה: {member.balance || 0}</p>
                           
                         </div>
                         

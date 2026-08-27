@@ -50,8 +50,7 @@ interface FamilyMember {
   name: string;
   role: 'parent' | 'child';
   lifetimeTasksCount?: number;
-  lifetimeEarnings?: number;
-  /** Spendable ChoreCoins right now — distinct from lifetimeEarnings above (a cumulative-forever stat). */
+  /** Spendable ChoreCoins right now — the only money ledger; incremented/decremented directly by earn/spend actions. */
   balance?: number;
 }
 
@@ -218,7 +217,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   };
 
   const currentChildProfile = members.find(m => m.id === user.id);
-  const currentBalance = currentChildProfile?.lifetimeEarnings || 0;
+  const currentBalance = currentChildProfile?.balance || 0;
 
   const openAvailableTasks = tasks.filter(t => t.status === 'open' && !t.assignedTo);
 
@@ -523,7 +522,7 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${member.role === 'parent' ? 'bg-purple-500/10 text-purple-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{member.role === 'parent' ? 'הורה' : 'צ׳אמפ'}</span>
                     </div>
                     {member.role === 'child' && (
-                      <p className="text-[10px] text-slate-400 mt-1 font-medium">🏆 ביצע {member.lifetimeTasksCount || 0} משימות • 💰 צבר {member.lifetimeEarnings || 0} ₪</p>
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium">🏆 ביצע {member.lifetimeTasksCount || 0} משימות • 💰 יתרת מטבעות: {member.balance || 0}</p>
                     )}
                   </div>
                 ))}

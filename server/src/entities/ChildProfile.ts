@@ -10,18 +10,15 @@ import { User } from './User';
 /**
  * Allowance ledger for a child user.
  *
- * lifetimeEarnings is the single source of truth for "money earned" — every
- * task approval adds to it, and it never decreases (a true lifetime total,
- * including base price + bonus; a task's own bonus amount stays visible on
- * the Task row itself, this is just the running sum). There is deliberately
- * no separate stored "spendable balance" column: spending is tracked purely
- * as reward-contribution ledger rows (see RewardContribution), and the
- * amount a child can spend right now is always computed on demand as
- * lifetimeEarnings minus the sum of their contributions to still-valid
- * (non-archived) rewards — see rewardStore.getSpendableBalance. A stored
- * balance that both this and the rewards flow would need to keep in lockstep
- * is exactly the kind of two-copies-of-the-truth setup that drifts out of
- * sync; a single ledger can't.
+ * balance is the single source of truth for "ChoreCoins this child can spend
+ * right now" — the only money ledger on ChildProfile. It's mutated directly
+ * by every action that earns or spends coins: incremented on task-approval
+ * payout (taskReview.runReview), decremented when a reward contribution is
+ * made (rewardStore.contributeToReward), and credited back when a
+ * contributed-to reward is archived/cancelled (rewardStore.archiveReward).
+ * RewardContribution rows are kept purely as a historical ledger (who gave
+ * how much, and when) — they are no longer summed on every read to derive
+ * spendable balance, since balance itself is now always current.
  *
  * Primary key mirrors the linked User id (shared PK via OneToOne JoinColumn).
  */
@@ -34,9 +31,9 @@ export class ChildProfile {
   @JoinColumn({ name: 'id' })
   user!: User;
 
-  /** Lifetime earnings including base price + bonuses. Never decreases. */
+  /** Spendable ChoreCoins right now. Directly incremented/decremented — never derived. */
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
-  lifetimeEarnings!: string;
+  balance!: string;
 
   /** Total number of approved tasks the child has completed. */
   @Column({ type: 'int', default: 0 })

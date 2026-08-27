@@ -108,12 +108,21 @@ export default function RewardCard({
       )}
 
       <div className="flex justify-between items-start gap-2">
-        <div className="flex flex-col gap-1">
-          <span className={`w-fit px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}>
-            {badge.label}
-          </span>
-          <h3 className="font-black text-white text-sm leading-tight">{reward.title}</h3>
-          {reward.description && <p className="text-slate-400 text-[11px] leading-relaxed">{reward.description}</p>}
+        <div className="flex gap-3 min-w-0">
+          {reward.imageUrl && (
+            <img
+              src={reward.imageUrl}
+              alt={reward.title}
+              className="w-12 h-12 shrink-0 rounded-xl object-cover ring-1 ring-slate-700/60"
+            />
+          )}
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className={`w-fit px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}>
+              {badge.label}
+            </span>
+            <h3 className="font-black text-white text-sm leading-tight">{reward.title}</h3>
+            {reward.description && <p className="text-slate-400 text-[11px] leading-relaxed">{reward.description}</p>}
+          </div>
         </div>
         {isCollaborative && (
           <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/10 text-violet-400 border border-violet-500/20">

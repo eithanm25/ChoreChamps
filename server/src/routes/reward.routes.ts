@@ -19,13 +19,14 @@ router.post('/', requireAuth, requireParent, async (req: AuthenticatedRequest, r
     return;
   }
 
-  const { title, description, category, type, targetAmount, affiliateUrl, targetChildId } = req.body as {
+  const { title, description, category, type, targetAmount, affiliateUrl, imageUrl, targetChildId } = req.body as {
     title?: string;
     description?: string;
     category?: string;
     type?: string;
     targetAmount?: unknown;
     affiliateUrl?: string;
+    imageUrl?: string;
     targetChildId?: string;
   };
 
@@ -47,6 +48,7 @@ router.post('/', requireAuth, requireParent, async (req: AuthenticatedRequest, r
     type,
     targetAmount: Number(targetAmount),
     affiliateUrl,
+    imageUrl,
     targetChildId,
   });
 

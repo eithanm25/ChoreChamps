@@ -9,7 +9,7 @@ import type { SafeUser } from '../App';
 
 interface ChildRewardsStoreProps {
   user: SafeUser;
-  /** Spendable ChoreCoins right now (ChildProfile.lifetimeEarnings minus active reward contributions). */
+  /** Spendable ChoreCoins right now — ChildProfile.balance, the app's only money ledger. */
   balance: number;
 }
 
@@ -74,7 +74,7 @@ export default function ChildRewardsStore({ user, balance }: ChildRewardsStorePr
   const categoryTabs: { key: CategoryFilter; label: string }[] = [
     { key: 'all', label: '✨ הכל' },
     { key: 'household', label: '🏠 תגמולים שווים מהבית' },
-    { key: 'marketplace', label: '🛒 חנות צעצועים וממתקים' },
+    { key: 'marketplace', label: '🛒 חנות מוצרים שווים' },
   ];
 
   if (loading) {

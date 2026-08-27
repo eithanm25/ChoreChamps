@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import type { CredentialResponse } from '@react-oauth/google';
 import axios from 'axios';
@@ -26,6 +26,23 @@ interface GoogleAuthButtonProps {
  * with familyCode + PIN.
  */
 export default function GoogleAuthButton({ onAuth, onError, inviteCode, mode }: GoogleAuthButtonProps): React.ReactNode {
+  // ה-widget של Google דורש רוחב בפיקסלים מדויק (אין תמיכה ב-100%), אז מודדים
+  // את רוחב המכל בפועל — כדי שהכפתור ייצא באותו רוחב בדיוק כמו שדות הקלט
+  // מסביבו — ומתעדכנים אם חלון הדפדפן משתנה. 400px הוא הרוחב המקסימלי שגוגל תומכת בו.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [buttonWidth, setButtonWidth] = useState(320);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setButtonWidth(Math.min(400, containerRef.current.offsetWidth));
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
   const handleSuccess = async (credentialResponse: CredentialResponse) => {
     if (!credentialResponse.credential) {
       onError('לא התקבל אישור מ-Google, נסו שוב');
@@ -50,14 +67,14 @@ export default function GoogleAuthButton({ onAuth, onError, inviteCode, mode }: 
   };
 
   return (
-    <div className="flex justify-center w-full [&>div]:w-full [&_iframe]:!w-full">
+    <div ref={containerRef} className="w-full flex justify-center">
       <GoogleLogin
         onSuccess={handleSuccess}
         onError={() => onError('ההתחברות עם Google נכשלה, נסו שוב')}
         theme="filled_black"
         shape="pill"
         text="continue_with"
-        width="320"
+        width={buttonWidth}
       />
     </div>
   );

@@ -13,7 +13,6 @@ import {
 } from '../middleware/auth';
 import { canAcceptTask, canCancelSubmission, childHasPendingTask } from '../services/taskGuardrails';
 import { parseReviewAction, runReview } from '../services/taskReview';
-import { getSpendableBalance } from '../services/rewardStore';
 import { reviewChorePhoto, MAX_EXECUTION_PHOTOS } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
@@ -268,8 +267,6 @@ router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res
       }
 
       // If Child: Map fields and safely convert decimal strings to numbers for the frontend
-      // balance is derived (lifetimeEarnings minus reward contributions), not a
-      // stored column — see rewardStore.getSpendableBalance for why.
       return {
         id: m.id,
         name: m.name,
@@ -277,8 +274,7 @@ router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res
         email: m.email ?? '',
         familyName: currentFamilyName,
         lifetimeTasksCount: m.childProfile ? Number(m.childProfile.lifetimeTasksCount) : 0,
-        lifetimeEarnings: m.childProfile ? Number(m.childProfile.lifetimeEarnings) : 0,
-        balance: m.childProfile ? Number(await getSpendableBalance(m.id)) : 0,
+        balance: m.childProfile ? Number(m.childProfile.balance) : 0,
       };
     }),
   );
@@ -646,9 +642,8 @@ router.post(
         },
         childProfile: {
           id: outcome.childId,
-          lifetimeEarnings: profile?.lifetimeEarnings ?? null,
           lifetimeTasksCount: profile?.lifetimeTasksCount ?? null,
-          balance: profile ? await getSpendableBalance(outcome.childId) : null,
+          balance: profile?.balance ?? null,
         },
       });
     } catch (err) {

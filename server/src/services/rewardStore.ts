@@ -1,4 +1,3 @@
-import type { EntityManager } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { Family } from '../entities/Family';
 import { Reward, RewardCategory, RewardType, RewardStatus } from '../entities/Reward';
@@ -7,40 +6,12 @@ import { ChildProfile } from '../entities/ChildProfile';
 import { User, UserRole } from '../entities/User';
 import { toCents, fromCents } from '../utils/money';
 
-// ── Spendable balance (derived, never stored) ──────────────────────────────
+// ── Spendable balance (stored directly on ChildProfile) ────────────────────
 
-/**
- * Sum of a child's contributions to every reward that's still valid — i.e.
- * excluding rewards that were archived, since an archived reward's coins are
- * implicitly "returned" the moment it stops counting against spendable
- * balance. Nothing is ever written back to ChildProfile for a "refund"; the
- * refund is just this filter naturally excluding it going forward.
- */
-async function getSpentCents(manager: EntityManager, childId: string): Promise<number> {
-  const row = await manager
-    .createQueryBuilder(RewardContribution, 'c')
-    .innerJoin(Reward, 'r', 'r.id = c."rewardId"')
-    .select('COALESCE(SUM(c.amount), 0)', 'spent')
-    .where('c."childId" = :childId', { childId })
-    .andWhere('r.status != :archived', { archived: RewardStatus.ARCHIVED })
-    .getRawOne<{ spent: string }>();
-  return toCents(row?.spent ?? '0');
-}
-
-/**
- * ChoreCoins a child can spend right now: everything they've ever earned
- * (ChildProfile.lifetimeEarnings, which only ever grows via task approvals)
- * minus everything they've put toward a still-valid reward. This is the only
- * definition of "balance" in the rewards system — there is no separate
- * stored counter that could drift out of sync with it.
- */
+/** ChoreCoins a child can spend right now — reads ChildProfile.balance directly. */
 export async function getSpendableBalance(childId: string): Promise<string> {
   const profile = await AppDataSource.getRepository(ChildProfile).findOne({ where: { id: childId } });
-  if (!profile) {
-    return '0.00';
-  }
-  const spentCents = await getSpentCents(AppDataSource.manager, childId);
-  return fromCents(Math.max(0, toCents(profile.lifetimeEarnings) - spentCents));
+  return profile ? fromCents(toCents(profile.balance)) : '0.00';
 }
 
 // ── Create ──────────────────────────────────────────────────────────────
@@ -54,6 +25,7 @@ export interface CreateRewardInput {
   type: RewardType;
   targetAmount: number;
   affiliateUrl?: string | null;
+  imageUrl?: string | null;
   targetChildId?: string | null;
 }
 
@@ -68,7 +40,7 @@ export type CreateRewardOutcome =
  * visible to everyone).
  */
 export async function createReward(input: CreateRewardInput): Promise<CreateRewardOutcome> {
-  const { family, createdBy, title, description, category, type, targetAmount, affiliateUrl, targetChildId } = input;
+  const { family, createdBy, title, description, category, type, targetAmount, affiliateUrl, imageUrl, targetChildId } = input;
 
   if (!title.trim()) {
     return { ok: false, status: 400, error: 'שם התגמול הוא שדה חובה' };
@@ -90,6 +62,8 @@ export async function createReward(input: CreateRewardInput): Promise<CreateRewa
     }
     normalizedAffiliateUrl = trimmed;
   }
+
+  const normalizedImageUrl = imageUrl?.trim() || null;
 
   let targetChild: User | null = null;
   if (type === RewardType.INDIVIDUAL) {
@@ -116,6 +90,7 @@ export async function createReward(input: CreateRewardInput): Promise<CreateRewa
     type,
     targetAmount: targetAmount.toFixed(2),
     affiliateUrl: normalizedAffiliateUrl,
+    imageUrl: normalizedImageUrl,
     targetChild,
     createdBy,
     status: RewardStatus.ACTIVE,
@@ -186,8 +161,8 @@ export type ContributeOutcome =
  *     even to two DIFFERENT rewards at once (the reward lock alone can't
  *     catch that, since it's a different row each time). Without it, a child
  *     firing two simultaneous contributions could have each one individually
- *     see a spendable balance that doesn't yet reflect the other's in-flight
- *     spend, together overspending past what they've actually earned.
+ *     see a balance that doesn't yet reflect the other's in-flight spend,
+ *     together overspending past what they actually have.
  */
 export async function contributeToReward(
   rewardId: string,
@@ -244,11 +219,14 @@ export async function contributeToReward(
       return { ok: false, status: 404, error: 'לא נמצא תיק דמי כיס עבור ילד/ה זו' };
     }
 
-    const spentCents = await getSpentCents(manager, child.id);
-    const spendableCents = Math.max(0, toCents(profile.lifetimeEarnings) - spentCents);
-    if (amountCents > spendableCents) {
+    const balanceCents = toCents(profile.balance);
+    if (amountCents > balanceCents) {
       return { ok: false, status: 409, error: 'אין מספיק מטבעות ביתרה לתרומה הזו' };
     }
+
+    // profile is locked above (pessimistic_write), so this read-then-write is
+    // race-safe against any other concurrent spend/earn touching this child.
+    await manager.update(ChildProfile, { id: child.id }, { balance: fromCents(balanceCents - amountCents) });
 
     const contribution = manager.create(RewardContribution, {
       rewardId: reward.id,
@@ -329,12 +307,13 @@ export type ArchiveOutcome =
   | { ok: false; status: number; error: string };
 
 /**
- * Parent cancels a reward. Since spendable balance is always derived as
- * lifetimeEarnings minus contributions to non-archived rewards (see
- * getSpendableBalance above), there is no explicit refund step to perform —
- * the moment this reward's status flips to 'archived', its contributions
- * stop counting against every contributor's spendable balance automatically.
- * The contribution rows themselves are kept for history, not deleted.
+ * Parent cancels a reward. Since balance is now a directly-mutated stored
+ * number (not derived from the ledger), cancelling has to explicitly credit
+ * every contributor back — grouped by child, in case several children put
+ * coins toward the same collaborative goal. Each credit is a single atomic
+ * `SET balance = balance + :amount` per contributor, safe under concurrency
+ * without needing to lock every contributor's ChildProfile row up front. The
+ * contribution rows themselves are kept for history, not deleted.
  */
 export async function archiveReward(rewardId: string, familyId: string): Promise<ArchiveOutcome> {
   return AppDataSource.transaction(async (manager) => {
@@ -356,11 +335,28 @@ export async function archiveReward(rewardId: string, familyId: string): Promise
       return { ok: false, status: 409, error: 'התגמול כבר בוטל' };
     }
 
-    const contributedRow = await manager
+    const contributorSums = await manager
       .createQueryBuilder(RewardContribution, 'c')
-      .select('COALESCE(SUM(c.amount), 0)', 'total')
+      .select('c."childId"', 'childId')
+      .addSelect('COALESCE(SUM(c.amount), 0)', 'total')
       .where('c."rewardId" = :rewardId', { rewardId })
-      .getRawOne<{ total: string }>();
+      .andWhere('c."childId" IS NOT NULL')
+      .groupBy('c."childId"')
+      .getRawMany<{ childId: string; total: string }>();
+
+    for (const row of contributorSums) {
+      await manager
+        .createQueryBuilder()
+        .update(ChildProfile)
+        .set({ balance: () => '"balance" + CAST(:amount AS numeric)' })
+        .where('id = :childId', { childId: row.childId })
+        .setParameters({ amount: row.total })
+        .execute();
+    }
+
+    const refundedTotal = fromCents(
+      contributorSums.reduce((sum, row) => sum + toCents(row.total), 0),
+    );
 
     await manager
       .createQueryBuilder()
@@ -369,6 +365,6 @@ export async function archiveReward(rewardId: string, familyId: string): Promise
       .where('id = :rewardId', { rewardId })
       .execute();
 
-    return { ok: true, refundedTotal: contributedRow?.total ?? '0.00' };
+    return { ok: true, refundedTotal };
   });
 }
