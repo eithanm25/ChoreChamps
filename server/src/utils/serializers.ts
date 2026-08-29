@@ -41,12 +41,12 @@ export interface TaskDto {
   assignedTo: PublicMember | null;
   createdBy: PublicMember | null;
   /**
-   * The parent's reference/target photo, if the task has one — null once the
-   * task is approved, since the file is deleted at that point (see
-   * taskReview.ts) even though the DB column itself is left populated,
-   * matching how Submission.photoUrls already behaves after approval.
+   * The parent's reference/target photo(s) or PDF, if the task has any —
+   * empty once the task is approved, since the files are deleted at that
+   * point (see taskReview.ts) even though the DB column itself is left
+   * populated, matching how Submission.photoUrls already behaves after approval.
    */
-  referencePhotoUrl: string | null;
+  referencePhotoUrls: string[];
   submission: {
     id: string;
     photoUrls: string[];
@@ -71,10 +71,10 @@ export function toTaskDto(task: Task): TaskDto {
     createdAt: task.createdAt,
     assignedTo: toPublicMember(task.assignedTo),
     createdBy: toPublicMember(task.createdBy),
-    referencePhotoUrl:
-      task.status !== TaskStatus.APPROVED && task.referencePhotoUrl
-        ? toPublicPhotoUrl(task.referencePhotoUrl)
-        : null,
+    referencePhotoUrls:
+      task.status !== TaskStatus.APPROVED && task.referencePhotoUrls
+        ? task.referencePhotoUrls.map(toPublicPhotoUrl)
+        : [],
     submission: task.submission
       ? {
           id: task.submission.id,

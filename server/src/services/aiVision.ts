@@ -41,9 +41,6 @@ const MEDIA_TYPES: Record<
   '.webp': 'image/webp',
 };
 
-/** Up to 1 reference photo (parent) + this many execution photos (child) per review. */
-export const MAX_EXECUTION_PHOTOS = 3;
-
 /**
  * Schema handed to structured outputs, which guarantees the response parses as
  * this shape. Note that numeric bounds are not supported in structured-output
@@ -113,14 +110,18 @@ function getClient(): Anthropic | null {
 }
 
 export interface ReviewChorePhotoParams {
-  /** Absolute paths to the child's proof photos, already confined to the uploads dir. 1–3 photos. */
+  /** Absolute paths to the child's proof photos, already confined to the uploads dir. */
   executionPhotoPaths: string[];
   /**
-   * Absolute path to the parent's optional reference/target photo (blank
+   * Absolute paths to the parent's optional reference/target photo(s) (blank
    * worksheet or "golden standard" chore example), already confined to the
-   * uploads dir. Omit or pass null when the task has no reference photo.
+   * uploads dir — how many there can be is tier-gated (see
+   * subscriptionLimits.ts). A PDF path is silently skipped here (unsupported
+   * by this vision-only call) but still passed through to the child/parent
+   * for viewing/download — see task.routes.ts. Omit or pass an empty array
+   * when the task has no reference photos.
    */
-  referencePhotoPath?: string | null;
+  referencePhotoPaths?: string[];
   title: string;
   description: string;
 }
@@ -157,7 +158,7 @@ async function buildImageBlock(absolutePath: string): Promise<Anthropic.ImageBlo
  */
 export async function reviewChorePhoto({
   executionPhotoPaths,
-  referencePhotoPath,
+  referencePhotoPaths,
   title,
   description,
 }: ReviewChorePhotoParams): Promise<AiReview | null> {
@@ -180,17 +181,21 @@ export async function reviewChorePhoto({
 
     const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
 
-    if (referencePhotoPath) {
-      const referenceBlock = await buildImageBlock(referencePhotoPath);
-      if (referenceBlock) {
-        content.push({
-          type: 'text',
-          text: 'REFERENCE photo the parent uploaded when creating this task (a blank worksheet/test to grade against, or a golden-standard example of the finished chore):',
-        });
-        content.push(referenceBlock);
-      } else {
-        console.warn(`[aiVision] Reference photo unreadable/unsupported, continuing without it: ${referencePhotoPath}`);
-      }
+    // Each reference file that isn't a readable image (a PDF, or an
+    // unsupported/corrupt file) is silently dropped from the vision call —
+    // the review just proceeds in STANDARD MODE without it.
+    const referenceBlocks = referencePhotoPaths?.length
+      ? (await Promise.all(referencePhotoPaths.map(buildImageBlock))).filter(
+          (block): block is Anthropic.ImageBlockParam => block !== null,
+        )
+      : [];
+
+    if (referenceBlocks.length > 0) {
+      content.push({
+        type: 'text',
+        text: `REFERENCE photo${referenceBlocks.length > 1 ? 's' : ''} the parent uploaded when creating this task (a blank worksheet/test to grade against, or a golden-standard example of the finished chore):`,
+      });
+      content.push(...referenceBlocks);
     }
 
     content.push({

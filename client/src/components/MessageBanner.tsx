@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 export type MessageType = 'success' | 'error';
 
@@ -6,10 +6,23 @@ interface MessageBannerProps {
   type: MessageType;
   text: string;
   onDismiss?: () => void;
+  /** Auto-dismiss delay in ms. Defaults to 4000; pass 0 to disable auto-dismiss entirely. */
+  autoDismissMs?: number;
 }
 
-export default function MessageBanner({ type, text, onDismiss }: MessageBannerProps): React.ReactNode {
+const DEFAULT_AUTO_DISMISS_MS = 4000;
+
+export default function MessageBanner({ type, text, onDismiss, autoDismissMs = DEFAULT_AUTO_DISMISS_MS }: MessageBannerProps): React.ReactNode {
   const isSuccess = type === 'success';
+
+  // נעלם לבד אחרי כמה שניות — המשתמש עדיין יכול לסגור ידנית עם ה-X קודם לכן
+  useEffect(() => {
+    if (!onDismiss || autoDismissMs <= 0) return;
+    const timer = setTimeout(onDismiss, autoDismissMs);
+    return () => clearTimeout(timer);
+    // מתאפס אם ההודעה עצמה השתנתה (טקסט/סוג) כדי שכל הודעה חדשה תקבל טיימר משלה
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, type, autoDismissMs]);
 
   return (
     <div

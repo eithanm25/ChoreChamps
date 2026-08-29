@@ -7,10 +7,20 @@ import ParentTasksList, { type Task } from '../components/ParentTasksList';
 import ParentRewardsPanel from '../components/ParentRewardsPanel';
 import MessageBanner from '../components/MessageBanner';
 import { usePolling } from '../hooks/usePolling';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
+import type { FamilyInfo } from '../types/family';
+import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads, tierAllowsWallet } from '../types/family';
+import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
+import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
+import AvatarBadge from '../components/AvatarBadge';
+import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
+import SubscriptionPage from './SubscriptionPage';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
   onLogout: () => void;
+  /** מעדכן את פרטי המשתמש המחוברים ברמת האפליקציה (App.tsx) — למשל אחרי בחירת אווטאר חדש. */
+  onUserUpdate?: (patch: Partial<SafeUser>) => void;
 }
 
 export interface FamilyMember {
@@ -25,32 +35,39 @@ export interface FamilyMember {
   balance?: number;
 }
 
-type MainTab = 'family' | 'tasks' | 'rewards';
+type MainTab = 'family' | 'tasks' | 'rewards' | 'wallet';
 
-export default function ParentDashboard({ user, onLogout }: DashboardProps): React.ReactNode {
+export default function ParentDashboard({ user, onLogout, onUserUpdate }: DashboardProps): React.ReactNode {
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [mainTab, setMainTab] = useState<MainTab>('family');
+  // פאנל הגדרות פרופיל (אווטאר, סיסמה, קוד משפחה) ומסך שדרוג מסלול — נפתחים מכותרת הדף
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [form, setForm] = useState({ name: '', password: '' });
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ title: '', description: '', basePrice: '', maxBonusPrice: '' , assignedToId: ''});
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', basePrice: '', maxBonusPrice: '' , assignedToId: '', useAiReview: true });
   const [taskLoading, setTaskLoading] = useState(false);
-  // תמונת ייחוס אופציונלית (דף עבודה ריק למבחן, או תקן ניקיון לדוגמה) שההורה
-  // מצרף בעת יצירת המשימה — משמשת את ה-AI להשוואה מול התמונות שהילד ישלח
-  const [referencePhoto, setReferencePhoto] = useState<File | null>(null);
-  const [referencePhotoPreview, setReferencePhotoPreview] = useState<string | null>(null);
-  // מנקה את ה-blob URL האחרון גם אם הרכיב יורד מהמסך באמצע מילוי הטופס
-  const referencePhotoPreviewRef = useRef<string | null>(null);
+  // מסלול המנוי ומכסת בדיקות ה-AI — נטענים מ-/api/family/me ומשפיעים על טופס פרסום המשימה למטה
+  const [familyInfo, setFamilyInfo] = useState<FamilyInfo | null>(null);
+  const familyTier = familyInfo?.tier ?? 'free';
+  const maxReferencePhotos = MAX_REFERENCE_PHOTOS_BY_TIER[familyTier];
+  const allowReferencePdf = tierAllowsPdfUploads(familyTier);
+  // תמונות/קבצי ייחוס אופציונליים (דף עבודה ריק למבחן, או תקן ניקיון לדוגמה)
+  // שההורה מצרף בעת יצירת המשימה — כמות מותרת תלוית-מסלול (ראו MAX_REFERENCE_PHOTOS_BY_TIER)
+  const [referencePhotos, setReferencePhotos] = useState<File[]>([]);
+  const [referencePhotoPreviews, setReferencePhotoPreviews] = useState<string[]>([]);
+  // מנקה את כל ה-blob URLs האחרונים גם אם הרכיב יורד מהמסך באמצע מילוי הטופס
+  const referencePhotoPreviewsRef = useRef<string[]>([]);
   useEffect(() => {
-    referencePhotoPreviewRef.current = referencePhotoPreview;
-  }, [referencePhotoPreview]);
+    referencePhotoPreviewsRef.current = referencePhotoPreviews;
+  }, [referencePhotoPreviews]);
   useEffect(() => {
     return () => {
-      if (referencePhotoPreviewRef.current) {
-        URL.revokeObjectURL(referencePhotoPreviewRef.current);
-      }
+      referencePhotoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -80,20 +97,29 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
     }
   };
 
-  useEffect(() => {
-    const loadInitialMembers = async () => {
-      await refreshMembers();
-      try {
-        const familyRes = await api.get('/api/family/me');
-        setFamilyCode(familyRes.data.family?.familyCode ?? null);
-      } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          console.error(err.response?.data?.error || err.message);
-        }
+  // שליפת פרטי המשפחה — קוד ההתחברות, מסלול המנוי ומכסת בדיקות ה-Aי החודשית
+  const refreshFamilyInfo = async () => {
+    try {
+      const familyRes = await api.get('/api/family/me');
+      setFamilyCode(familyRes.data.family?.familyCode ?? null);
+      setFamilyInfo(familyRes.data.family ?? null);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        console.error(err.response?.data?.error || err.message);
       }
+    }
+  };
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      await refreshMembers();
+      await refreshFamilyInfo();
     };
-    loadInitialMembers();
+    loadInitialData();
   }, []);
+
+  // מתעדכן ברקע כדי שמכסת בדיקות ה-AI תישאר נכונה גם אחרי שהילד שולח משימות
+  usePolling(refreshFamilyInfo);
 
   // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שהוספת/מחיקת בן משפחה
   // מבוצעת בסשן אחר תופיע כאן בלי רענון ידני
@@ -108,6 +134,10 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   const handleTaskInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setTaskForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const toggleUseAiReview = () => {
+    setTaskForm(prev => ({ ...prev, useAiReview: !prev.useAiReview }));
   };
 
   // הוספת ילד/ה חדש/ה למשפחה (הורים נוספים מצטרפים רק דרך הזמנת Google — ראו למטה)
@@ -143,19 +173,20 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   }
 
     // פונקציית מחיקת בן משפחה עם עדכון ויזואלי מהיר (Optimistic UI Update)
-  const handleDeleteMember = async (memberId: string, memberName: string) => {
+  const handleDeleteMember = (memberId: string, memberName: string) => {
     // הגנה בפרונט: מניעת מחיקה עצמית
     if (memberId === user.id) {
       setDashboardMessage({ type: 'error', text: 'אינך יכול למחוק את עצמך מהמערכת!' });
       return;
     }
 
-    const confirmDelete = window.confirm(`האם אתם בטוחים שברצונכם להסיר את ${memberName} מהקבוצה המשפחתית?`);
-    if (!confirmDelete) return;
+    requestConfirm(`האם אתם בטוחים שברצונכם להסיר את ${memberName} מהקבוצה המשפחתית?`, () => confirmDeleteMember(memberId));
+  };
 
+  const confirmDeleteMember = async (memberId: string) => {
     try {
       await api.delete(`/api/family/member/${memberId}`);
-      
+
       // עדכון מקומי מהיר: מוחקים את המשתמש מה-State והכרטיס מתאדה מהמסך בשבריר שנייה
       setMembers(prev => prev.filter(m => m.id !== memberId));
     } catch (err: unknown) {
@@ -168,22 +199,34 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
   };
 
 
-  // בחירת תמונת ייחוס אופציונלית (דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה)
+  // בחירת תמונות/קבצי ייחוס אופציונליים (דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה)
+  // — הכמות המותרת תלוית-מסלול (ראו maxReferencePhotos למטה)
   const handleReferencePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    if (referencePhotoPreview) {
-      URL.revokeObjectURL(referencePhotoPreview);
+    if (!e.target.files) return;
+    const remainingSlots = maxReferencePhotos - referencePhotos.length;
+    const filesArray = Array.from(e.target.files).slice(0, Math.max(0, remainingSlots));
+
+    if (filesArray.length === 0) {
+      setDashboardMessage({ type: 'error', text: `אפשר לצרף עד ${maxReferencePhotos} ${allowReferencePdf ? 'קבצים' : 'תמונות'} ייחוס למשימה` });
+      e.target.value = '';
+      return;
     }
-    setReferencePhoto(file);
-    setReferencePhotoPreview(file ? URL.createObjectURL(file) : null);
+
+    setReferencePhotos((prev) => [...prev, ...filesArray]);
+    setReferencePhotoPreviews((prev) => [...prev, ...filesArray.map((file) => URL.createObjectURL(file))]);
+    e.target.value = '';
   };
 
-  const clearReferencePhoto = () => {
-    if (referencePhotoPreview) {
-      URL.revokeObjectURL(referencePhotoPreview);
-    }
-    setReferencePhoto(null);
-    setReferencePhotoPreview(null);
+  const removeReferencePhoto = (indexToRemove: number) => {
+    URL.revokeObjectURL(referencePhotoPreviews[indexToRemove]);
+    setReferencePhotos((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setReferencePhotoPreviews((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const clearReferencePhotos = () => {
+    referencePhotoPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setReferencePhotos([]);
+    setReferencePhotoPreviews([]);
   };
 
   async function handleCreateTask(e: SyntheticEvent) {
@@ -202,9 +245,10 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       if (taskForm.assignedToId) {
         formData.append('assignedToId', taskForm.assignedToId);
       }
-      if (referencePhoto) {
-        formData.append('referencePhoto', referencePhoto);
-      }
+      referencePhotos.forEach((file) => {
+        formData.append('referencePhoto', file);
+      });
+      formData.append('useAiReview', String(taskForm.useAiReview));
 
       const response = await api.post('/api/tasks', formData);
 
@@ -220,8 +264,8 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
       }
 
       // איפוס הטופס ורענון רשימת המשפחה (כדי לעדכן את כמות המשימות שההורה העלה)
-      setTaskForm({ title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '' });
-      clearReferencePhoto();
+      setTaskForm({ title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true });
+      clearReferencePhotos();
       setMembers(prevMembers =>
         prevMembers.map(member =>
           member.id === user.id
@@ -320,8 +364,9 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6 text-right font-sans" dir="rtl">
+      {confirmDialog}
       <div className="max-w-6xl mx-auto flex flex-col gap-6">
-        
+
         {dashboardMessage && (
           <MessageBanner type={dashboardMessage.type} text={dashboardMessage.text} onDismiss={() => setDashboardMessage(null)} />
         )}
@@ -339,13 +384,41 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
               </p>
             )}
           </div>
-          <button
-            onClick={onLogout}
-            className="px-5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-sm font-bold transition-all shadow-lg"
-          >
-            התנתק מהחשבון
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 transition-all"
+              title="הגדרות פרופיל"
+            >
+              <AvatarBadge name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+              <span className="text-slate-200 text-sm font-bold">{user.name.split(' ')[0]}</span>
+              <span className="text-slate-400 text-sm">⚙️</span>
+            </button>
+            <button
+              onClick={onLogout}
+              className="px-5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-sm font-bold transition-all shadow-lg"
+            >
+              התנתק מהחשבון
+            </button>
+          </div>
         </header>
+
+        {settingsOpen && (
+          <ProfileSettingsPanel
+            user={user}
+            familyCode={familyCode}
+            familyTier={familyTier}
+            onClose={() => setSettingsOpen(false)}
+            onAvatarChange={(avatarUrl) => onUserUpdate?.({ avatarUrl })}
+            onOpenSubscription={() => {
+              setSettingsOpen(false);
+              setSubscriptionOpen(true);
+            }}
+          />
+        )}
+
+        {subscriptionOpen && <SubscriptionPage currentTier={familyTier} onClose={() => setSubscriptionOpen(false)} />}
 
         <nav className="bg-slate-800/40 p-1.5 rounded-full ring-1 ring-slate-700/50 flex gap-2 w-full max-w-lg overflow-x-auto">
           <button
@@ -375,6 +448,17 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
           >
             🎁 חנות הפרסים
           </button>
+          {tierAllowsWallet(familyTier) && (
+            <button
+              type="button"
+              onClick={() => setMainTab('wallet')}
+              className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                mainTab === 'wallet' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              💸 העברת כספים
+            </button>
+          )}
         </nav>
 
         {/* === טאב 1: ניהול חברי המשפחה והוספת פרופילים === */}
@@ -537,7 +621,7 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                 {mainTab === 'tasks' && (
           <div className="flex flex-col gap-6 animate-fade-in">
             {/* לוח המעקב החכם (עם 3 הטאבים הפנימיים, צילומי התמונות וניתוח ה-JSONB) */}
-            <ParentTasksList tasks={tasks} setTasks={setTasks} />
+            <ParentTasksList tasks={tasks} setTasks={setTasks} familyTier={familyInfo?.tier} />
 
             {/* טופס פרסום המשימות */}
             <section className="flex flex-col gap-4">
@@ -592,36 +676,82 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
                       </select>
                     </div>
 
-                    {/* תמונת ייחוס אופציונלית — דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה */}
+                    {/* תמונות/קבצי ייחוס אופציונליים — דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה */}
                     <div className="flex flex-col gap-1">
-                      <label className="text-slate-200 text-sm font-medium">📎 תמונת ייחוס למשימה (אופציונלי)</label>
+                      <label className="text-slate-200 text-sm font-medium">
+                        📎 תמונות ייחוס למשימה (אופציונלי, עד {maxReferencePhotos})
+                      </label>
                       <p className="text-slate-500 text-[11px] leading-relaxed mb-1">
-                        דף עבודה/מבחן ריק לבדיקת שיעורי בית, או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את התמונה שהילד/ה ישלחו מולה.
+                        {allowReferencePdf
+                          ? 'דף עבודה/מבחן ריק לבדיקת שיעורי בית (תמונה או PDF), או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את מה שהילד/ה ישלחו מולה.'
+                          : 'דף עבודה/מבחן ריק לבדיקת שיעורי בית, או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את התמונה שהילד/ה ישלחו מולה.'}
                       </p>
-                      {!referencePhotoPreview ? (
+
+                      {referencePhotos.length < maxReferencePhotos && (
                         <label className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-300 font-bold text-sm">
-                          <span>📷</span> העלאת תמונת ייחוס
+                          <span>{allowReferencePdf ? '📎' : '📷'}</span>
+                          {referencePhotos.length > 0
+                            ? `הוסיפו עוד (${referencePhotos.length}/${maxReferencePhotos})`
+                            : allowReferencePdf
+                              ? 'העלאת תמונה או קובץ PDF'
+                              : 'העלאת תמונת ייחוס'}
                           <input
                             type="file"
-                            accept="image/*"
+                            accept={allowReferencePdf ? 'image/*,application/pdf' : 'image/*'}
+                            multiple
                             onChange={handleReferencePhotoChange}
                             className="hidden"
                             disabled={taskLoading}
                           />
                         </label>
-                      ) : (
-                        <div className="relative w-24 h-24">
-                          <img src={referencePhotoPreview} alt="תצוגה מקדימה של תמונת הייחוס" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
-                          <button
-                            type="button"
-                            onClick={clearReferencePhoto}
-                            disabled={taskLoading}
-                            className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black shadow-md cursor-pointer select-none"
-                            title="הסר תמונה"
-                          >
-                            ✕
-                          </button>
+                      )}
+
+                      {referencePhotos.length > 0 && (
+                        <div className="flex gap-2 flex-wrap mt-1">
+                          {referencePhotos.map((file, idx) => (
+                            <LocalMediaThumbnail
+                              key={idx}
+                              file={file}
+                              previewUrl={referencePhotoPreviews[idx]}
+                              onRemove={() => removeReferencePhoto(idx)}
+                              className="w-20 h-20"
+                            />
+                          ))}
                         </div>
+                      )}
+                    </div>
+
+                    {/* 🤖 הפעלת בדיקת AI אוטומטית למשימה הזו — עם מכסת השימושים הנותרת */}
+                    <div className={`flex flex-col gap-2 p-3 rounded-xl border transition-all ${
+                      taskForm.useAiReview ? 'bg-indigo-950/20 border-indigo-500/30' : 'bg-slate-800/40 border-slate-700/50'
+                    }`}>
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={taskForm.useAiReview}
+                          onChange={toggleUseAiReview}
+                          disabled={taskLoading}
+                          className="w-4 h-4 rounded accent-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-slate-200 text-sm font-bold flex items-center gap-1">
+                          <span>🤖</span> הפעלת בדיקת AI אוטומטית למשימה הזו
+                        </span>
+                      </label>
+
+                      {familyInfo?.tier === 'free' ? (
+                        typeof familyInfo.aiUsagesRemaining === 'number' && familyInfo.aiUsagesRemaining > 0 ? (
+                          <p className="text-[11px] text-slate-400 leading-relaxed pr-6">
+                            נותרו לכם <span className="text-indigo-400 font-bold">{familyInfo.aiUsagesRemaining}</span> בדיקות AI חינמיות 💙 אפשר גם לכבות את הבדיקה למשימות פשוטות ולשמור אותן להמשך.
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-rose-400 leading-relaxed pr-6">
+                            הגעתם למגבלת בדיקות ה-AI החינמיות 🤖 אפשר לכבות את הבדיקה למשימה הזו, או לשדרג למנויי פרימיום לבדיקות ללא הגבלה.
+                          </p>
+                        )
+                      ) : (
+                        familyInfo && (
+                          <p className="text-[11px] text-emerald-400 leading-relaxed pr-6">✨ במסלול שלכם בדיקות ה-AI ללא הגבלה</p>
+                        )
                       )}
                     </div>
                   </div>
@@ -686,6 +816,19 @@ export default function ParentDashboard({ user, onLogout }: DashboardProps): Rea
 
         {/* === טאב 3: חנות הפרסים — פרסום תגמולים וניהול הקטלוג === */}
         {mainTab === 'rewards' && <ParentRewardsPanel />}
+
+        {/* === טאב 4: העברת כספים — זיכוי/חיוב ישיר של ילד, זמין רק במסלול האקדמיה === */}
+        {mainTab === 'wallet' && tierAllowsWallet(familyTier) && (
+          <ParentCoinAdjustPanel
+            authProvider={user.authProvider}
+            children={members
+              .filter((m) => m.role === 'child')
+              .map((m) => ({ id: m.id, name: m.name, balance: m.balance }))}
+            onAdjustComplete={(childId, newBalance) => {
+              setMembers((prev) => prev.map((m) => (m.id === childId ? { ...m, balance: newBalance } : m)));
+            }}
+          />
+        )}
 
       </div>
     </div>

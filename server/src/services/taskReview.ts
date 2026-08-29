@@ -170,11 +170,9 @@ export async function runReview(
     .execute();
 
   // Approval closes out the task's learning/comparison cycle for good, so the
-  // parent's reference photo is cleaned up here too, alongside the child's
+  // parent's reference photo(s) are cleaned up here too, alongside the child's
   // submission photos — nothing is left to compare against anymore.
-  const photoUrls = task.referencePhotoUrl
-    ? [...submissionPhotoUrls, task.referencePhotoUrl]
-    : submissionPhotoUrls;
+  const photoUrls = [...submissionPhotoUrls, ...(task.referencePhotoUrls ?? [])];
 
   return {
     ok: true,

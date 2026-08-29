@@ -8,6 +8,7 @@ import { Task } from './entities/Task';
 import { Submission } from './entities/Submission';
 import { Reward } from './entities/Reward';
 import { RewardContribution } from './entities/RewardContribution';
+import { WalletTransaction } from './entities/WalletTransaction';
 
 dotenv.config();
 
@@ -20,5 +21,5 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_DATABASE ?? 'chore_champs',
   synchronize: true, // auto-sync schema in development; disable in production
   logging: process.env.NODE_ENV === 'development',
-  entities: [Family, User, ChildProfile, Task, Submission, Reward, RewardContribution],
+  entities: [Family, User, ChildProfile, Task, Submission, Reward, RewardContribution, WalletTransaction],
 });

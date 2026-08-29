@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { AppDataSource } from '../data-source';
-import { Family } from '../entities/Family';
+import { Family, SubscriptionTier } from '../entities/Family';
+import { FREE_TIER_MONTHLY_AI_LIMIT } from '../utils/subscriptionLimits';
 import { User, UserRole } from '../entities/User';
 import { ChildProfile } from '../entities/ChildProfile';
 import {
@@ -111,6 +112,14 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       // Grants "join as co-parent via Google" — sensitive, so only parents
       // (who can already see and reshare it) get it back, never children.
       parentInviteCode: user.role === UserRole.PARENT ? family.parentInviteCode : undefined,
+      tier: family.tier,
+      aiUsageCount: family.aiUsageCount,
+      // null means "no cap" (PREMIUM/ACADEMY) — the frontend's polite quota
+      // message only renders when this is a number.
+      aiUsagesRemaining:
+        family.tier === SubscriptionTier.FREE
+          ? Math.max(0, FREE_TIER_MONTHLY_AI_LIMIT - family.aiUsageCount)
+          : null,
     },
   });
 });

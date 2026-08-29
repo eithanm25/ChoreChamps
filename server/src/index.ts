@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes';
 import familyRoutes from './routes/family.routes';
 import taskRoutes from './routes/task.routes';
 import rewardRoutes from './routes/reward.routes';
+import walletRoutes from './routes/wallet.routes';
 import { UPLOADS_DIR } from './utils/uploads';
 
 dotenv.config();
@@ -24,6 +25,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/rewards', rewardRoutes);
+app.use('/api/wallet', walletRoutes);
 
 async function bootstrap(): Promise<void> {
   try {

@@ -69,15 +69,26 @@ export class Task {
   rejectionCount!: number;
 
   /**
-   * Optional reference photo the parent uploads when creating the task — a
-   * blank worksheet/test to grade against, or a "golden standard" example of a
-   * finished chore. Stored the same way as Submission.photoUrls (a bare local
-   * filename under uploads/). Deleted once the task is approved (see
-   * deleteLocalPhotos in task.routes.ts) — the learning/chore cycle is done by
-   * then, so there's nothing left to compare against.
+   * Optional reference photo(s)/PDF the parent uploads when creating the task
+   * — a blank worksheet/test to grade against, or a "golden standard" example
+   * of a finished chore. How many are allowed is tier-gated (see
+   * subscriptionLimits.ts's MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 3,
+   * ACADEMY: higher + PDFs). Stored the same way as Submission.photoUrls (bare
+   * local filenames under uploads/, comma-separated). Deleted once the task is
+   * approved (see deleteLocalPhotos in task.routes.ts) — the learning/chore
+   * cycle is done by then, so there's nothing left to compare against.
    */
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  referencePhotoUrl!: string | null;
+  @Column({ type: 'simple-array', nullable: true })
+  referencePhotoUrls!: string[] | null;
+
+  /**
+   * Parent's per-task opt-in for Claude AI photo review, chosen at creation.
+   * When false, submission skips reviewChorePhoto entirely (aiSummary stays
+   * null and the family's aiUsageCount is untouched) — lets a parent save
+   * quota on tasks that don't need AI grading.
+   */
+  @Column({ type: 'boolean', default: true })
+  useAiReview!: boolean;
 
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.OPEN })
   status!: TaskStatus;

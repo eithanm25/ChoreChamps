@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
-import api, { resolvePhotoUrl } from '../services/api';
+import api from '../services/api';
 import MessageBanner from './MessageBanner';
+import MediaThumbnail from './MediaThumbnail';
 import { usePolling } from '../hooks/usePolling';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
+import type { SubscriptionTier } from '../types/family';
 
 // הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
 interface AiSummaryJson {
@@ -31,8 +34,8 @@ export interface Task {
   status: 'open' | 'pending' | 'completed' | 'rejected' | 'approved';
   assignedTo: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
-  /** Blank worksheet/test, or "golden standard" chore example — null once approved (file is deleted then). */
-  referencePhotoUrl: string | null;
+  /** Blank worksheet/test, or "golden standard" chore example — empty once approved (files are deleted then). */
+  referencePhotoUrls: string[];
   submission?: Submission | null;
 }
 
@@ -45,6 +48,8 @@ interface FamilyMember {
 interface ParentTasksListProps {
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  /** Gates the lightbox's download button — files are wiped on approval, so only Academy tier can save a copy first. */
+  familyTier?: SubscriptionTier;
 }
 
 type TaskTab = 'unassigned' | 'in-progress' | 'pending-approval' | 'needs-fixing' | 'approved';
@@ -61,7 +66,9 @@ function getAssigneeLabel(task: Task): string {
   return 'צ׳אמפ';
 }
 
-export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProps): React.ReactNode {
+export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentTasksListProps): React.ReactNode {
+  const allowDownload = familyTier === 'academy';
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TaskTab>('unassigned');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -125,10 +132,11 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
   usePolling(fetchTasksAndChildren);
 
   // 2. פונקציית מחיקת משימה חכמה (🗑️) עם עדכון ויזואלי מיידי
-  const handleDelete = async (taskId: string, taskTitle: string) => {
-    const confirmDelete = window.confirm(`האם אתם בטוחים שברצונכם לבטל ולמחוק את המשימה "${taskTitle}"?`);
-    if (!confirmDelete) return;
+  const handleDelete = (taskId: string, taskTitle: string) => {
+    requestConfirm(`האם אתם בטוחים שברצונכם לבטל ולמחוק את המשימה "${taskTitle}"?`, () => confirmDeleteTask(taskId));
+  };
 
+  const confirmDeleteTask = async (taskId: string) => {
     try {
       await api.delete(`/api/tasks/${taskId}`);
 
@@ -278,6 +286,7 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
 
   return (
     <div className="bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl shadow-xl w-full" dir="rtl">
+      {confirmDialog}
 
       {message && (
         <div className="mb-4">
@@ -481,10 +490,20 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
                     {/* === טאב מחכות לאישור === */}
                     {activeTab === 'pending-approval' && task.submission && (
                       <div className="flex flex-col gap-3 pt-2 bg-slate-900/40 p-3 rounded-xl ring-1 ring-slate-700/30">
-                        {task.referencePhotoUrl && (
+                        {task.referencePhotoUrls.length > 0 && (
                           <div className="flex flex-col gap-1">
-                            <span className="text-[11px] text-slate-400 font-medium">📎 תמונת הייחוס שצירפתם:</span>
-                            <img src={resolvePhotoUrl(task.referencePhotoUrl)} alt="תמונת ייחוס" className="w-20 h-20 object-cover rounded-lg border border-indigo-700/60" />
+                            <span className="text-[11px] text-slate-400 font-medium">📎 תמונות/קבצי הייחוס שצירפתם:</span>
+                            <div className="flex gap-2 overflow-x-auto py-1">
+                              {task.referencePhotoUrls.map((url, idx) => (
+                                <MediaThumbnail
+                                  key={idx}
+                                  url={url}
+                                  alt="תמונת ייחוס"
+                                  className="w-20 h-20 rounded-lg border border-indigo-700/60"
+                                  allowDownload={allowDownload}
+                                />
+                              ))}
+                            </div>
                           </div>
                         )}
                         {task.submission.photoUrls && task.submission.photoUrls.length > 0 && (
@@ -492,7 +511,13 @@ export default function ParentTasksList({ tasks, setTasks }: ParentTasksListProp
                             <span className="text-[11px] text-slate-400 font-medium">📸 הוכחות ויזואליות מהילד:</span>
                             <div className="flex gap-2 overflow-x-auto py-1">
                               {task.submission.photoUrls.map((url, idx) => (
-                                <img key={idx} src={resolvePhotoUrl(url)} alt="הוכחה" className="w-20 h-20 object-cover rounded-lg border border-slate-700" />
+                                <MediaThumbnail
+                                  key={idx}
+                                  url={url}
+                                  alt="הוכחה"
+                                  className="w-20 h-20 rounded-lg border border-slate-700"
+                                  allowDownload={allowDownload}
+                                />
                               ))}
                             </div>
                           </div>

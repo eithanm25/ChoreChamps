@@ -2,9 +2,10 @@ import { Router, Response, NextFunction } from 'express';
 import { stat, unlink } from 'fs/promises';
 import { AppDataSource } from '../data-source';
 import { Task, TaskStatus } from '../entities/Task';
-import { Submission } from '../entities/Submission';
+import { Submission, AiReview } from '../entities/Submission';
 import { ChildProfile } from '../entities/ChildProfile';
 import { UserRole, User } from '../entities/User';
+import { Family, SubscriptionTier } from '../entities/Family';
 import {
   AuthenticatedRequest,
   requireAuth,
@@ -13,9 +14,15 @@ import {
 } from '../middleware/auth';
 import { canAcceptTask, canCancelSubmission, childHasPendingTask } from '../services/taskGuardrails';
 import { parseReviewAction, runReview } from '../services/taskReview';
-import { reviewChorePhoto, MAX_EXECUTION_PHOTOS } from '../services/aiVision';
+import { reviewChorePhoto } from '../services/aiVision';
 import { resolveUploadPath } from '../utils/uploads';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
+import {
+  FREE_TIER_MONTHLY_AI_LIMIT,
+  MAX_EXECUTION_PHOTOS_BY_TIER,
+  MAX_REFERENCE_PHOTOS_BY_TIER,
+  tierAllowsPdfUploads,
+} from '../utils/subscriptionLimits';
 import multer from 'multer';
 import path from 'path';
 
@@ -32,21 +39,62 @@ const storage = multer.diskStorage({
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_EXECUTION_PHOTOS },
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      cb(new Error('רק קבצי תמונה מותרים'));
-      return;
-    }
-    cb(null, true);
-  },
-});
+/** One multer instance per tier, built once — file-count cap and allowed types both vary by tier. */
+function buildExecutionUpload(tier: SubscriptionTier): ReturnType<typeof multer> {
+  const allowPdf = tierAllowsPdfUploads(tier);
+  return multer({
+    storage,
+    limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_EXECUTION_PHOTOS_BY_TIER[tier] },
+    fileFilter: (req, file, cb) => {
+      const isImage = file.mimetype.startsWith('image/');
+      const isPdf = allowPdf && file.mimetype === 'application/pdf';
+      if (!isImage && !isPdf) {
+        cb(new Error(allowPdf ? 'רק קבצי תמונה או PDF מותרים' : 'רק קבצי תמונה מותרים'));
+        return;
+      }
+      cb(null, true);
+    },
+  });
+}
+
+const executionUploadByTier: Record<SubscriptionTier, ReturnType<typeof multer>> = {
+  [SubscriptionTier.FREE]: buildExecutionUpload(SubscriptionTier.FREE),
+  [SubscriptionTier.PREMIUM]: buildExecutionUpload(SubscriptionTier.PREMIUM),
+  [SubscriptionTier.ACADEMY]: buildExecutionUpload(SubscriptionTier.ACADEMY),
+};
+
+/**
+ * Reference photo upload (task creation) — how many files and which types are
+ * accepted both vary by tier (see subscriptionLimits.ts's
+ * MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 3, ACADEMY: higher +
+ * PDFs).
+ */
+function buildReferenceUpload(tier: SubscriptionTier): ReturnType<typeof multer> {
+  const allowPdf = tierAllowsPdfUploads(tier);
+  return multer({
+    storage,
+    limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_REFERENCE_PHOTOS_BY_TIER[tier] },
+    fileFilter: (req, file, cb) => {
+      const isImage = file.mimetype.startsWith('image/');
+      const isPdf = allowPdf && file.mimetype === 'application/pdf';
+      if (!isImage && !isPdf) {
+        cb(new Error(allowPdf ? 'רק קבצי תמונה או PDF מותרים' : 'רק קבצי תמונה מותרים'));
+        return;
+      }
+      cb(null, true);
+    },
+  });
+}
+
+const referenceUploadByTier: Record<SubscriptionTier, ReturnType<typeof multer>> = {
+  [SubscriptionTier.FREE]: buildReferenceUpload(SubscriptionTier.FREE),
+  [SubscriptionTier.PREMIUM]: buildReferenceUpload(SubscriptionTier.PREMIUM),
+  [SubscriptionTier.ACADEMY]: buildReferenceUpload(SubscriptionTier.ACADEMY),
+};
 
 function multerErrorMessage(err: unknown): string {
   return err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
-    ? 'כל תמונה חייבת להיות עד 8MB'
+    ? 'כל קובץ חייב להיות עד 8MB'
     : err instanceof Error
       ? err.message
       : 'שגיאה בהעלאת הקבצים';
@@ -56,9 +104,15 @@ function multerErrorMessage(err: unknown): string {
  * Wraps upload.array so a rejected file (wrong type, too large, too many)
  * reaches the client as a 400 instead of falling through to Express's default
  * error handler, which would return an opaque 500 with a stack trace.
+ *
+ * The multer instance is picked by the caller's family tier — requireAuth has
+ * already loaded req.user.family (with its `tier` column) by the time this
+ * runs, so no extra DB round-trip is needed here.
  */
 function handlePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  upload.array('photos', MAX_EXECUTION_PHOTOS)(req, res, (err: unknown) => {
+  const tier = req.user?.family?.tier ?? SubscriptionTier.FREE;
+  const maxFiles = MAX_EXECUTION_PHOTOS_BY_TIER[tier];
+  executionUploadByTier[tier].array('photos', maxFiles)(req, res, (err: unknown) => {
     if (err) {
       res.status(400).json({ error: multerErrorMessage(err) });
       return;
@@ -67,13 +121,20 @@ function handlePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextF
   });
 }
 
+/** Only an explicit false-ish value opts a task out of AI review — everything else (including omitted) defaults to opted-in. */
+function parseAiReviewFlag(value: unknown): boolean {
+  return !(value === false || value === 'false');
+}
+
 /**
- * Optional single-file upload for the parent's reference photo (blank
- * worksheet/test, or a golden-standard chore example) at task creation.
- * Absent is fine — req.file simply stays undefined.
+ * Optional multi-file upload for the parent's reference photo(s)/PDF (blank
+ * worksheet/test, or a golden-standard chore example) at task creation. Absent
+ * is fine — req.files simply stays empty. Max count is tier-gated.
  */
 function handleReferencePhotoUpload(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  upload.single('referencePhoto')(req, res, (err: unknown) => {
+  const tier = req.user?.family?.tier ?? SubscriptionTier.FREE;
+  const maxFiles = MAX_REFERENCE_PHOTOS_BY_TIER[tier];
+  referenceUploadByTier[tier].array('referencePhoto', maxFiles)(req, res, (err: unknown) => {
     if (err) {
       res.status(400).json({ error: multerErrorMessage(err) });
       return;
@@ -98,12 +159,14 @@ router.post(
   requireParent,
   handleReferencePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { title, description, basePrice, maxBonusPrice, assignedToId } = req.body as {
+    const { title, description, basePrice, maxBonusPrice, assignedToId, useAiReview } = req.body as {
       title?: string;
       description?: string;
       basePrice?: unknown;
       maxBonusPrice?: unknown;
       assignedToId?: string | null; // חילוץ השדה החדש מהבקשה
+      /** Parent's AI-review checkbox. Arrives as a real boolean from JSON, or 'true'/'false' string from multipart form fields. Defaults to true (opted in) when omitted. */
+      useAiReview?: unknown;
     };
 
     if (!title || typeof title !== 'string') {
@@ -160,7 +223,7 @@ router.post(
       assignedChild = childUser;
     }
 
-    const referencePhotoFile = req.file as Express.Multer.File | undefined;
+    const referencePhotoFiles = (req.files as Express.Multer.File[] | undefined) ?? [];
 
     const task = taskRepo.create({
       title,
@@ -171,7 +234,8 @@ router.post(
       family: parent.family,
       createdBy: parent,
       assignedTo: assignedChild,
-      referencePhotoUrl: referencePhotoFile ? referencePhotoFile.filename : null,
+      referencePhotoUrls: referencePhotoFiles.length > 0 ? referencePhotoFiles.map((f) => f.filename) : null,
+      useAiReview: parseAiReviewFlag(useAiReview),
     });
 
     await taskRepo.save(task);
@@ -261,6 +325,7 @@ router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res
           name: m.name,
           role: m.role,
           email: m.email ?? '',
+          avatarUrl: m.avatarUrl,
           familyName: currentFamilyName,
           totalTasksUploaded,
         };
@@ -272,6 +337,7 @@ router.get('/family-members', requireAuth, async (req: AuthenticatedRequest, res
         name: m.name,
         role: m.role,
         email: m.email ?? '',
+        avatarUrl: m.avatarUrl,
         familyName: currentFamilyName,
         lifetimeTasksCount: m.childProfile ? Number(m.childProfile.lifetimeTasksCount) : 0,
         balance: m.childProfile ? Number(m.childProfile.balance) : 0,
@@ -490,17 +556,44 @@ router.post(
 
       const savedPhotoNames = files.map((file) => file.filename);
 
-      // Runs before the transaction: this is a ~6s network call and must not
-      // hold a DB transaction open. reviewChorePhoto never throws — it returns
-      // null when the review is unavailable.
-      const aiSummary = await reviewChorePhoto({
-        executionPhotoPaths: files.map((file) => file.path),
-        referencePhotoPath: task.referencePhotoUrl
-          ? resolveUploadPath(task.referencePhotoUrl)
-          : null,
-        title: task.title,
-        description: task.description,
-      });
+      // The parent may have opted this specific task out of AI review at
+      // creation time (useAiReview = false) — skip the quota check and the
+      // API call entirely in that case; the submission still goes through,
+      // just ungraded.
+      let aiSummary: AiReview | null = null;
+      if (task.useAiReview) {
+        const tier = task.family.tier;
+        if (tier === SubscriptionTier.FREE && task.family.aiUsageCount >= FREE_TIER_MONTHLY_AI_LIMIT) {
+          // Files are already written to disk by multer at this point, but the
+          // submission itself never happens — clean them up rather than leak them.
+          await deleteLocalPhotos(savedPhotoNames);
+          res.status(403).json({
+            error: 'הגעתם למגבלת בדיקות ה-AI החינמיות שלכם לחודש זה! 🤖 שדרגו למנוי צ׳אמפ כדי לפתוח בדיקות נוספות',
+          });
+          return;
+        }
+
+        // Runs before the transaction: this is a ~6s network call and must not
+        // hold a DB transaction open. reviewChorePhoto never throws — it returns
+        // null when the review is unavailable.
+        aiSummary = await reviewChorePhoto({
+          executionPhotoPaths: files.map((file) => file.path),
+          referencePhotoPaths: (task.referencePhotoUrls ?? [])
+            .map(resolveUploadPath)
+            .filter((p): p is string => p !== null),
+          title: task.title,
+          description: task.description,
+        });
+
+        // Only a review that actually ran counts against quota — an outage or
+        // missing API key (reviewChorePhoto returning null) shouldn't cost the
+        // family one of their free checks. Tracked for every tier, even
+        // though only FREE is capacity-limited above, so usage stays visible
+        // for Premium/Academy households too.
+        if (aiSummary !== null) {
+          await AppDataSource.getRepository(Family).increment({ id: task.family.id }, 'aiUsageCount', 1);
+        }
+      }
 
       // Status flip and submission insert are one atomic unit, so the child can
       // never end up with a saved submission on a task still marked 'pending'.
@@ -711,7 +804,7 @@ router.delete(
       // The parent's reference photo (if any) is cleaned up the same way.
       const photoUrls = [
         ...(task.submission?.photoUrls ?? []),
-        ...(task.referencePhotoUrl ? [task.referencePhotoUrl] : []),
+        ...(task.referencePhotoUrls ?? []),
       ];
 
       await taskRepo.remove(task);

@@ -8,6 +8,13 @@ import {
 import { User } from './User';
 import { Task } from './Task';
 
+/** Freemium plan for a household. Gates AI review quota, upload constraints, and wallet features. */
+export enum SubscriptionTier {
+  FREE = 'free',
+  PREMIUM = 'premium',
+  ACADEMY = 'academy',
+}
+
 /**
  * A household grouping parents and children under shared chores and allowance rules.
  *
@@ -21,6 +28,19 @@ export class Family {
 
   @Column({ type: 'varchar', length: 255 })
   familyName!: string;
+
+  /** Freemium plan. FREE by default; PREMIUM/ACADEMY unlock AI/upload limits and (ACADEMY only) the wallet ledger. */
+  @Column({ type: 'enum', enum: SubscriptionTier, default: SubscriptionTier.FREE })
+  tier!: SubscriptionTier;
+
+  /**
+   * Claude AI photo-review requests used this month, across the whole household.
+   * Only enforced as a cap on FREE tier (see subscriptionLimits.ts); tracked for
+   * every tier for visibility. Nothing currently resets this monthly — see the
+   * task.routes.ts submit handler's docstring for what a real reset job needs.
+   */
+  @Column({ type: 'int', default: 0 })
+  aiUsageCount!: number;
 
   /** Unique code for inviting additional co-parents. */
   @Column({ type: 'varchar', length: 32, unique: true, nullable: true })

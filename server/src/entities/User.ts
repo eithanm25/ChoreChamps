@@ -18,6 +18,13 @@ export enum UserRole {
   CHILD = 'child',
 }
 
+export enum AuthProvider {
+  /** Logs in with a password/PIN they chose themselves — email+password parents, and every child (familyCode + PIN). */
+  PASSWORD = 'password',
+  /** Logs in exclusively via Google Sign-In. `password` on these rows is a random value nobody knows (see auth.routes.ts) — deliberately unusable for password login, so callers must never prompt these users for "their password". */
+  GOOGLE = 'google',
+}
+
 /**
  * A family member — parent (manager) or child (chore doer).
  *
@@ -53,6 +60,14 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole })
   role!: UserRole;
+
+  /** Which credential this account actually authenticates with — see AuthProvider docstring. */
+  @Column({ type: 'enum', enum: AuthProvider, default: AuthProvider.PASSWORD })
+  authProvider!: AuthProvider;
+
+  /** One of the fixed emoji choices in utils/avatars.ts. Null until the user picks one — the UI falls back to their name's initial. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  avatarUrl!: string | null;
 
   /** Household membership — null for a newly signed-up parent before family creation. */
   @ManyToOne(() => Family, (family) => family.members, { nullable: true })

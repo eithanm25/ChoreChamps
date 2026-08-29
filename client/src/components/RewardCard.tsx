@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { RewardDto } from '../types/reward';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 interface RewardCardProps {
   reward: RewardDto;
@@ -34,6 +35,7 @@ export default function RewardCard({
 }: RewardCardProps): React.ReactNode {
   const [contributeAmount, setContributeAmount] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   const badge = CATEGORY_BADGE[reward.category];
   const isCollaborative = reward.type === 'collaborative';
@@ -67,21 +69,23 @@ export default function RewardCard({
     }
   };
 
-  const handleArchive = async () => {
+  const handleArchive = () => {
     if (!onArchive || actionLoading) return;
-    const confirmed = window.confirm(`לבטל את התגמול "${reward.title}"? כל התרומות שנצברו יוחזרו ליתרת הילדים.`);
-    if (!confirmed) return;
-    setActionLoading(true);
-    try {
-      await onArchive();
-    } finally {
-      setActionLoading(false);
-    }
+    requestConfirm(`לבטל את התגמול "${reward.title}"? כל התרומות שנצברו יוחזרו ליתרת הילדים.`, async () => {
+      setActionLoading(true);
+      try {
+        await onArchive();
+      } finally {
+        setActionLoading(false);
+      }
+    });
   };
 
   const disabled = busy || actionLoading;
 
   return (
+    <>
+    {confirmDialog}
     <div
       className={`relative overflow-hidden rounded-2xl border p-4 shadow-xl flex flex-col gap-3 transition-all ${
         isCollaborative
@@ -241,5 +245,6 @@ export default function RewardCard({
         </div>
       )}
     </div>
+    </>
   );
 }

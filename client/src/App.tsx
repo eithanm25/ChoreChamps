@@ -24,6 +24,15 @@ export interface SafeUser {
   familyId?: string | null;
   /** Household login code — present once the user's family has been created. */
   familyCode?: string | null;
+  /**
+   * Which credential this account actually logs in with. A 'google' parent's
+   * `password` in the database is an unusable random placeholder — never
+   * prompt one of these users for "their password" (see the server's
+   * AuthProvider docstring); use a Google re-auth confirmation instead.
+   */
+  authProvider?: 'password' | 'google';
+  /** One of the fixed emoji in data/avatars.ts — null/undefined until chosen, in which case the UI falls back to a name-initial badge. */
+  avatarUrl?: string | null;
 }
 
 export default function App(): React.ReactNode {
@@ -75,6 +84,17 @@ export default function App(): React.ReactNode {
     localStorage.setItem('token', newToken); // החלפת הטוקן הישן בחדש שמכיל את ה-familyId!
     setToken(newToken);
     setUser(updatedUser);
+  };
+
+  // עדכון חלקי של פרטי המשתמש המחוברים (למשל: בחירת אווטאר חדש) — נשמר גם
+  // ב-localStorage כדי שיישאר "לצמיתות" גם אחרי רענון עמוד/סשן חדש
+  const updateUser = (patch: Partial<SafeUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...patch };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
   };
 
 
@@ -157,7 +177,7 @@ export default function App(): React.ReactNode {
           path="/parent-dashboard"
           element={
             token && user?.role === 'parent' && user.familyId ? (
-              <ParentDashboard user={user} onLogout={handleLogout} />
+              <ParentDashboard user={user} onLogout={handleLogout} onUserUpdate={updateUser} />
             ) : (
               <Navigate to="/" replace />
             )
@@ -169,7 +189,7 @@ export default function App(): React.ReactNode {
           path="/child-dashboard"
           element={
             token && user?.role === 'child' && user.familyId ? (
-              <ChildDashboard user={user} onLogout={handleLogout} />
+              <ChildDashboard user={user} onLogout={handleLogout} onUserUpdate={updateUser} />
             ) : (
               <Navigate to="/" replace />
             )

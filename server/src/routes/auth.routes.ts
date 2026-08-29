@@ -3,11 +3,12 @@ import { randomBytes } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { AppDataSource } from '../data-source';
 import { Family } from '../entities/Family';
-import { User, UserRole } from '../entities/User';
+import { User, UserRole, AuthProvider } from '../entities/User';
 import { hashPassword, verifyPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
-import { AuthenticatedRequest } from '../middleware/auth';
+import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { PG_UNIQUE_VIOLATION } from '../services/familyCode';
+import { AVAILABLE_AVATARS } from '../utils/avatars';
 
 const router = Router();
 
@@ -114,6 +115,8 @@ router.post('/signup', async (req, res: Response) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      authProvider: user.authProvider,
+      avatarUrl: user.avatarUrl,
       familyId: family?.id ?? null,
       familyCode: family?.familyCode ?? null,
     },
@@ -144,6 +147,19 @@ router.post('/login', async (req, res: Response) => {
     return;
   }
 
+  // A Google-authenticated account's password column is a random,
+  // unrecoverable placeholder (see AuthProvider docstring) — no password
+  // typed here will ever match it, including the account's real Gmail
+  // password, which this app never receives from Google in the first place.
+  // Telling the user that specifically (rather than a generic "wrong
+  // password") isn't a security leak — it doesn't help anyone guess a
+  // credential — and it's the one piece of information that actually gets
+  // them logged in, via the Google button instead.
+  if (user.authProvider === AuthProvider.GOOGLE) {
+    res.status(401).json({ error: 'חשבון זה נרשם עם Google — התחברו עם כפתור ה-Google למעלה, לא ניתן להתחבר עם סיסמה' });
+    return;
+  }
+
   if (!verifyPassword(password, user.password)) {
     res.status(401).json({ error: 'Invalid credentials' });
     return;
@@ -161,6 +177,8 @@ router.post('/login', async (req, res: Response) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      authProvider: user.authProvider,
+      avatarUrl: user.avatarUrl,
       familyId: user.family?.id ?? null,
       familyCode: user.family?.familyCode ?? null,
     },
@@ -228,6 +246,8 @@ router.post('/profile-login', async (req, res: Response) => {
       id: user.id,
       name: user.name,
       role: user.role,
+      authProvider: user.authProvider,
+      avatarUrl: user.avatarUrl,
       familyId: user.family?.id ?? null,
       familyCode: family.familyCode,
     },
@@ -307,6 +327,17 @@ router.post('/google', async (req, res: Response) => {
         return;
       }
 
+      // Self-heals accounts created before authProvider existed (or created
+      // via Google some other way that left it unset): logging in with a
+      // verified Google token IS proof this account is Google-authenticated,
+      // so mark it — this is what makes the wallet's security gate correctly
+      // ask these users to reconfirm via Google instead of a password they
+      // were never given and can never know (see AuthProvider docstring).
+      if (existing.authProvider !== AuthProvider.GOOGLE) {
+        existing.authProvider = AuthProvider.GOOGLE;
+        await userRepo.save(existing);
+      }
+
       const token = signToken({
         userId: existing.id,
         role: existing.role,
@@ -319,6 +350,8 @@ router.post('/google', async (req, res: Response) => {
           name: existing.name,
           email: existing.email,
           role: existing.role,
+          authProvider: existing.authProvider,
+      avatarUrl: existing.avatarUrl,
           familyId: existing.family?.id ?? null,
           familyCode: existing.family?.familyCode ?? null,
         },
@@ -350,6 +383,7 @@ router.post('/google', async (req, res: Response) => {
         email,
         password: placeholderPassword,
         role: UserRole.PARENT,
+        authProvider: AuthProvider.GOOGLE,
         family,
       });
 
@@ -375,6 +409,8 @@ router.post('/google', async (req, res: Response) => {
           name: coParent.name,
           email: coParent.email,
           role: coParent.role,
+          authProvider: coParent.authProvider,
+      avatarUrl: coParent.avatarUrl,
           familyId: family.id,
           familyCode: family.familyCode,
         },
@@ -392,6 +428,7 @@ router.post('/google', async (req, res: Response) => {
       email,
       password: placeholderPassword,
       role: UserRole.PARENT,
+      authProvider: AuthProvider.GOOGLE,
       family: null,
     });
     await userRepo.save(parent);
@@ -404,6 +441,8 @@ router.post('/google', async (req, res: Response) => {
         name: parent.name,
         email: parent.email,
         role: parent.role,
+        authProvider: parent.authProvider,
+      avatarUrl: parent.avatarUrl,
         familyId: null,
         familyCode: null,
       },
@@ -413,6 +452,121 @@ router.post('/google', async (req, res: Response) => {
     console.error('[auth/google] failed to complete Google sign-in:', err);
     res.status(500).json({ error: 'שגיאה בהתחברות עם Google, נסו שוב בעוד רגע' });
   }
+});
+
+/**
+ * POST /api/auth/verify-password
+ * Re-checks the currently-authenticated user's own password without issuing a
+ * new token — a lightweight "step-up" confirmation gate for a sensitive
+ * in-session action (see wallet.routes.ts's transfer/adjust endpoints), not a
+ * login. Never reveals which part failed; a wrong password is just 401.
+ */
+router.post('/verify-password', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { password } = req.body as { password?: string };
+  const user = req.user!;
+
+  if (!password || !verifyPassword(password, user.password)) {
+    res.status(401).json({ error: 'הסיסמה שגויה' });
+    return;
+  }
+
+  res.json({ verified: true });
+});
+
+/**
+ * POST /api/auth/verify-google
+ * The Google-account counterpart of /verify-password — a sensitive in-session
+ * action's "step-up" confirmation for a user who signed in via Google, whose
+ * `password` column is an unusable random placeholder (see AuthProvider
+ * docstring) and so can never complete a password prompt. Re-verifies a fresh
+ * Google ID token and requires it to match the currently-authenticated user's
+ * own email — proving "you can still sign into this exact Google account
+ * right now" the same way a password re-entry would prove "you still know
+ * your password".
+ */
+router.post('/verify-google', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { credentialToken } = req.body as { credentialToken?: string };
+  const user = req.user!;
+
+  if (!credentialToken) {
+    res.status(400).json({ error: 'credentialToken is required' });
+    return;
+  }
+
+  const client = getGoogleClient();
+  if (!client) {
+    res.status(500).json({ error: 'אימות Google אינו מוגדר בשרת כרגע' });
+    return;
+  }
+
+  try {
+    const ticket = await client.verifyIdToken({ idToken: credentialToken, audience: GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+
+    if (!payload?.email || !payload.email_verified || payload.email !== user.email) {
+      res.status(401).json({ error: 'האימות לא תואם את חשבון ה-Google שלך' });
+      return;
+    }
+
+    res.json({ verified: true });
+  } catch (err) {
+    console.error('[auth/verify-google] token verification failed:', err);
+    res.status(401).json({ error: 'אימות Google נכשל, נסו שוב' });
+  }
+});
+
+/**
+ * POST /api/auth/change-password
+ * Self-service password (parent) / PIN (child) change. Requires the current
+ * value, same as any password-change form. Rejected outright for a
+ * Google-authenticated parent — see AuthProvider docstring; there is no
+ * current password for them to prove they know, since none was ever set by
+ * them or shown to them.
+ */
+router.post('/change-password', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+
+  if (user.authProvider === AuthProvider.GOOGLE) {
+    res.status(400).json({ error: 'חשבון זה מחובר עם Google בלבד — אין סיסמה לניהול כאן' });
+    return;
+  }
+  if (!newPassword?.trim()) {
+    res.status(400).json({ error: 'יש להזין ערך חדש' });
+    return;
+  }
+  if (!currentPassword || !verifyPassword(currentPassword, user.password)) {
+    res.status(401).json({ error: 'הערך הנוכחי שגוי' });
+    return;
+  }
+
+  const userRepo = AppDataSource.getRepository(User);
+  user.password = hashPassword(newPassword);
+  await userRepo.save(user);
+
+  res.json({ message: 'העדכון בוצע בהצלחה' });
+});
+
+/**
+ * PATCH /api/auth/avatar
+ * Sets the caller's profile avatar. Must be one of the fixed emoji in
+ * utils/avatars.ts — never an arbitrary string/URL, which keeps this a
+ * zero-storage, zero-cloud-cost feature with no upload surface to secure.
+ */
+router.patch('/avatar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const { avatarUrl } = req.body as { avatarUrl?: string };
+
+  if (!avatarUrl || !AVAILABLE_AVATARS.includes(avatarUrl)) {
+    res.status(400).json({ error: 'אווטאר לא תקין' });
+    return;
+  }
+
+  const userRepo = AppDataSource.getRepository(User);
+  user.avatarUrl = avatarUrl;
+  await userRepo.save(user);
+
+  res.json({ avatarUrl: user.avatarUrl });
 });
 
 export default router;

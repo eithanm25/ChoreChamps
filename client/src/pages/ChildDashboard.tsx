@@ -1,18 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
-import api, { resolvePhotoUrl } from '../services/api';
+import api from '../services/api';
 import type { SafeUser } from '../App';
 import MessageBanner from '../components/MessageBanner';
+import MediaThumbnail from '../components/MediaThumbnail';
+import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
+import CameraCapture from '../components/CameraCapture';
 import { usePolling } from '../hooks/usePolling';
 import ChildRewardsStore from '../components/ChildRewardsStore';
-
-/** Matches the server's aiVision MAX_EXECUTION_PHOTOS — kept in sync manually since it can't be imported cross-project. */
-const MAX_EXECUTION_PHOTOS = 3;
+import WalletTransferPanel from '../components/WalletTransferPanel';
+import AvatarBadge from '../components/AvatarBadge';
+import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
+import type { FamilyInfo } from '../types/family';
+import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads, tierAllowsWallet } from '../types/family';
 
 interface ChildDashboardProps {
   user: SafeUser;
   onLogout: () => void;
+  /** מעדכן את פרטי המשתמש המחוברים ברמת האפליקציה (App.tsx) — למשל אחרי בחירת אווטאר חדש. */
+  onUserUpdate?: (patch: Partial<SafeUser>) => void;
 }
 
 interface AiSummaryJson {
@@ -40,8 +47,8 @@ interface Task {
   status: 'open' | 'pending' | 'completed' | 'rejected' | 'approved';
   assignedTo: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
-  /** Blank worksheet/test to answer, or "golden standard" chore example, if the parent attached one. */
-  referencePhotoUrl: string | null;
+  /** Blank worksheet/test to answer, or "golden standard" chore example(s), if the parent attached any. */
+  referencePhotoUrls: string[];
   submission?: Submission | null;
 }
 
@@ -54,9 +61,9 @@ interface FamilyMember {
   balance?: number;
 }
 
-type ChildTab = 'tasks-hub' | 'rewards-store' | 'family-leaderboard';
+type ChildTab = 'tasks-hub' | 'rewards-store' | 'family-leaderboard' | 'wallet';
 
-export default function ChildDashboard({ user, onLogout }: ChildDashboardProps): React.ReactNode {
+export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDashboardProps): React.ReactNode {
   const [activeMainTab, setActiveMainTab] = useState<ChildTab>('tasks-hub');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -69,9 +76,21 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
   const [proofDescription, setProofDescription] = useState('');
   const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // מצלמה חיה (Free/Premium בלבד) — ראו CameraCapture.tsx לסיבה שזה לא input רגיל
+  const [cameraOpen, setCameraOpen] = useState(false);
+  // פאנל הגדרות פרופיל (אווטאר, PIN, קוד משפחה) — נפתח מכותרת הדף. אין אפשרות
+  // שדרוג מסלול מכאן בכלל — זו זכות של הורים בלבד, ראו ProfileSettingsPanel
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // סטייט לצפייה באחים
   const [selectedSibling, setSelectedSibling] = useState<FamilyMember | null>(null);
+
+  // מסלול המנוי של המשפחה — קובע אם חובה לצלם עם המצלמה בלבד (Free/Premium) או שמותר גם
+  // להעלות קבצים/PDF קיימים (Academy), וכמה תמונות מותר לצרף להגשה
+  const [familyInfo, setFamilyInfo] = useState<FamilyInfo | null>(null);
+  const familyTier = familyInfo?.tier ?? 'free';
+  const maxExecutionPhotos = MAX_EXECUTION_PHOTOS_BY_TIER[familyTier];
+  const allowPdfUploads = tierAllowsPdfUploads(familyTier);
 
   // מעקב אחר כל ה-blob URLs שנוצרו כדי לנקות אותם גם אם הרכיב יורד מהמסך באמצע הגשה
   const previewUrlsRef = useRef<string[]>([]);
@@ -91,6 +110,9 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
 
       const membersRes = await api.get('/api/tasks/family-members');
       setMembers(membersRes.data.members || []);
+
+      const familyRes = await api.get('/api/family/me');
+      setFamilyInfo(familyRes.data.family ?? null);
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) console.error(err.message);
     } finally {
@@ -111,11 +133,11 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const remainingSlots = MAX_EXECUTION_PHOTOS - selectedPhotos.length;
+      const remainingSlots = maxExecutionPhotos - selectedPhotos.length;
       const filesArray = Array.from(e.target.files).slice(0, Math.max(0, remainingSlots));
 
       if (filesArray.length === 0) {
-        setMessage({ type: 'error', text: `אפשר לצרף עד ${MAX_EXECUTION_PHOTOS} תמונות למשימה` });
+        setMessage({ type: 'error', text: `אפשר לצרף עד ${maxExecutionPhotos} ${allowPdfUploads ? 'קבצים' : 'תמונות'} למשימה` });
         e.target.value = '';
         return;
       }
@@ -128,6 +150,12 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
       setPreviewUrls(prev => [...prev, ...newPreviews]);
       e.target.value = '';
     }
+  };
+
+  // תמונה שצולמה בפועל דרך המצלמה החיה (Free/Premium) — נכנסת לאותו state כמו קובץ שנבחר
+  const handleCameraCapture = (file: File) => {
+    setSelectedPhotos(prev => [...prev, file]);
+    setPreviewUrls(prev => [...prev, URL.createObjectURL(file)]);
   };
 
   const removePhoto = (indexToRemove: number) => {
@@ -238,39 +266,72 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
         <span>📸</span> צילום הוכחה לביצוע המשימה
       </span>
 
-      {/* כפתור המצלמה/העלאה המעוצב לנייד */}
+      {/* כפתור המצלמה/העלאה */}
       <div className="flex flex-col gap-2">
-        <label className={`w-full py-3 bg-slate-800 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 transition-colors text-slate-300 font-bold ${selectedPhotos.length >= MAX_EXECUTION_PHOTOS ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-700 cursor-pointer'}`}>
-          <span>📷</span> {selectedPhotos.length >= MAX_EXECUTION_PHOTOS ? `הגעתם למקסימום ${MAX_EXECUTION_PHOTOS} תמונות` : selectedPhotos.length > 0 ? `צלם/הוסף עוד תמונה (${selectedPhotos.length}/${MAX_EXECUTION_PHOTOS})` : 'לחץ כאן כדי לצלם את העבודה'}
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handlePhotoChange}
-            className="hidden"
-            disabled={actionLoading || selectedPhotos.length >= MAX_EXECUTION_PHOTOS}
-          />
-        </label>
+        {allowPdfUploads ? (
+          <label className={`w-full py-3 bg-slate-800 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 transition-colors text-slate-300 font-bold ${selectedPhotos.length >= maxExecutionPhotos ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-700 cursor-pointer'}`}>
+            <span>📎</span>
+            {selectedPhotos.length >= maxExecutionPhotos
+              ? `הגעתם למקסימום ${maxExecutionPhotos} קבצים`
+              : selectedPhotos.length > 0
+                ? `הוסף/י עוד קובץ (${selectedPhotos.length}/${maxExecutionPhotos})`
+                : 'לחץ/י כאן כדי לצרף תמונה או קובץ PDF'}
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              onChange={handlePhotoChange}
+              className="hidden"
+              disabled={actionLoading || selectedPhotos.length >= maxExecutionPhotos}
+            />
+          </label>
+        ) : (
+          <>
+            {/* אין כאן input type="file" בכלל — ה-capture="environment" של HTML נופל בחזרה
+                לבורר קבצים רגיל בדפדפני דסקטופ (ואף בחלק מהניידים), ולא באמת אוכף מצלמה.
+                המצלמה החיה של CameraCapture היא מנגנון האכיפה בפועל. */}
+            <button
+              type="button"
+              onClick={() => setCameraOpen(true)}
+              disabled={actionLoading || selectedPhotos.length >= maxExecutionPhotos}
+              className={`w-full py-3 bg-slate-800 border border-dashed border-slate-600 rounded-xl flex items-center justify-center gap-2 transition-colors text-slate-300 font-bold ${selectedPhotos.length >= maxExecutionPhotos ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-700 cursor-pointer'}`}
+            >
+              <span>📷</span>
+              {selectedPhotos.length >= maxExecutionPhotos
+                ? `הגעתם למקסימום ${maxExecutionPhotos} תמונות`
+                : selectedPhotos.length > 0
+                  ? `צלם/י עוד תמונה (${selectedPhotos.length}/${maxExecutionPhotos})`
+                  : 'לחץ כאן כדי לפתוח מצלמה ולצלם'}
+            </button>
+            <p className="text-[10px] text-slate-500 text-center">📷 חובה לצלם עכשיו דרך המצלמה — אי אפשר לבחור תמונה קיימת מהמכשיר</p>
+          </>
+        )}
       </div>
 
-      {/* 🖼️ תצוגה מקדימה (Preview) של התמונות שהילד צילם כולל כפתור מחיקה קטן */}
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={handleCameraCapture}
+          onClose={() => setCameraOpen(false)}
+          remainingSlots={maxExecutionPhotos - selectedPhotos.length}
+        />
+      )}
+
+      {/* 🖼️ תצוגה מקדימה (Preview) של התמונות/קבצים שנבחרו כולל כפתור מחיקה קטן */}
       {previewUrls.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <span className="text-slate-400 text-[10px]">התמונות שנבחרו לשליחה:</span>
+          <span className="text-slate-400 text-[10px]">{allowPdfUploads ? 'הקבצים שנבחרו לשליחה:' : 'התמונות שנבחרו לשליחה:'}</span>
           <div className="flex gap-2 overflow-x-auto py-1">
-            {previewUrls.map((base64Str, idx) => (
-              <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
-                <img src={base64Str} alt="תצוגה מקדימה" className="w-full h-full object-cover rounded-lg border border-slate-700 ring-2 ring-slate-800 shadow-md" />
-                <button
-                  type="button"
-                  onClick={() => removePhoto(idx)}
-                  className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center text-[9px] font-black shadow-md cursor-pointer select-none"
-                  title="מחק תמונה"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {previewUrls.map((previewUrl, idx) =>
+              selectedPhotos[idx] ? (
+                <LocalMediaThumbnail
+                  key={idx}
+                  file={selectedPhotos[idx]}
+                  previewUrl={previewUrl}
+                  onRemove={() => removePhoto(idx)}
+                  className="w-16 h-16 flex-shrink-0"
+                />
+              ) : null,
+            )}
           </div>
         </div>
       )}
@@ -319,8 +380,29 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
             <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">שלום הצ'מפיון {user.name}! 💪</h1>
             <p className="text-slate-400 text-xs mt-0.5">כל משימה שתבצע מקדמת אותך לפרסים הגדולים</p>
           </div>
-          <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 transition-all"
+              title="הגדרות פרופיל"
+            >
+              <AvatarBadge name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+              <span className="text-slate-200 text-xs font-bold">{user.name.split(' ')[0]}</span>
+              <span className="text-slate-400 text-xs">⚙️</span>
+            </button>
+            <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
+          </div>
         </header>
+
+        {settingsOpen && (
+          <ProfileSettingsPanel
+            user={user}
+            familyCode={familyInfo?.familyCode ?? null}
+            onClose={() => setSettingsOpen(false)}
+            onAvatarChange={(avatarUrl) => onUserUpdate?.({ avatarUrl })}
+          />
+        )}
 
         {/* 🪙 כרטיס קופת זהב נוצצת */}
         <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 p-5 rounded-2xl shadow-xl flex items-center gap-4 relative overflow-hidden">
@@ -336,6 +418,9 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
           <button onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎯 משימות וחטיפה</button>
           <button onClick={() => setActiveMainTab('rewards-store')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'rewards-store' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎁 חנות הפרסים שלי</button>
           <button onClick={() => setActiveMainTab('family-leaderboard')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>👥 חברי המשפחה</button>
+          {tierAllowsWallet(familyTier) && (
+            <button onClick={() => setActiveMainTab('wallet')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'wallet' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>💸 ארנק</button>
+          )}
         </nav>
 
         {/* === טאב 1: לוח משימות פתוחות + המשימה הפעילה שלי === */}
@@ -384,10 +469,20 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                     </span>
                   </div>
 
-                  {myPendingTask.referencePhotoUrl && (
+                  {myPendingTask.referencePhotoUrls.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <span className="text-slate-400 text-[10px] font-bold">📎 דף העבודה / התקן שצריך להשלים:</span>
-                      <img src={resolvePhotoUrl(myPendingTask.referencePhotoUrl)} alt="תמונת ייחוס למשימה" className="w-28 h-28 object-cover rounded-lg border border-indigo-500/40 shadow-md" />
+                      <div className="flex gap-2 overflow-x-auto py-1">
+                        {myPendingTask.referencePhotoUrls.map((url, idx) => (
+                          <MediaThumbnail
+                            key={idx}
+                            url={url}
+                            alt="תמונת ייחוס למשימה"
+                            className="w-28 h-28 rounded-lg border border-indigo-500/40 shadow-md"
+                            allowDownload={familyTier === 'academy'}
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -438,6 +533,23 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                         </div>
                       </div>
 
+                      {task.submission?.photoUrls && task.submission.photoUrls.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold">📸 מה ששלחת:</span>
+                          <div className="flex gap-2 overflow-x-auto py-1">
+                            {task.submission.photoUrls.map((url, idx) => (
+                              <MediaThumbnail
+                                key={idx}
+                                url={url}
+                                alt="ההוכחה ששלחת"
+                                className="w-16 h-16 rounded-lg border border-emerald-500/30"
+                                allowDownload={familyTier === 'academy'}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2 bg-slate-900/40 rounded-xl px-3 py-2">
                         <span className="text-base animate-pulse">⏳</span>
                         <span className="text-[11px] text-slate-300 font-medium">
@@ -474,10 +586,20 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
                         </div>
                       )}
 
-                      {task.referencePhotoUrl && (
+                      {task.referencePhotoUrls.length > 0 && (
                         <div className="flex flex-col gap-1.5">
                           <span className="text-slate-400 text-[10px] font-bold">📎 דף העבודה / התקן להשוואה:</span>
-                          <img src={resolvePhotoUrl(task.referencePhotoUrl)} alt="תמונת ייחוס למשימה" className="w-28 h-28 object-cover rounded-lg border border-rose-500/40 shadow-md" />
+                          <div className="flex gap-2 overflow-x-auto py-1">
+                            {task.referencePhotoUrls.map((url, idx) => (
+                              <MediaThumbnail
+                                key={idx}
+                                url={url}
+                                alt="תמונת ייחוס למשימה"
+                                className="w-28 h-28 rounded-lg border border-rose-500/40 shadow-md"
+                                allowDownload={familyTier === 'academy'}
+                              />
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -579,6 +701,24 @@ export default function ChildDashboard({ user, onLogout }: ChildDashboardProps):
               )}
             </section>
           </div>
+        )}
+
+        {/* === טאב 4: ארנק — העברת מטבעות לאחים, זמין רק במסלול האקדמיה === */}
+        {activeMainTab === 'wallet' && tierAllowsWallet(familyTier) && (
+          <WalletTransferPanel
+            currentUserId={user.id}
+            children={members
+              .filter((m) => m.role === 'child')
+              .map((m) => ({ id: m.id, name: m.name, balance: m.balance }))}
+            onTransferComplete={(patch) => {
+              setMembers((prev) =>
+                prev.map((m) => {
+                  const update = patch.find((p) => p.childId === m.id);
+                  return update ? { ...m, balance: update.newBalance } : m;
+                }),
+              );
+            }}
+          />
         )}
 
       </div>
