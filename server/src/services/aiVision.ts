@@ -1,5 +1,3 @@
-import { readFile } from 'fs/promises';
-import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { AiReview } from '../entities/Submission';
 
@@ -29,17 +27,16 @@ const MAX_TOKENS = 4096;
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
-/** Vision-supported image types, keyed by file extension. */
-const MEDIA_TYPES: Record<
-  string,
-  'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-};
+/** Image media types Anthropic vision accepts. */
+export type VisionMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+const SUPPORTED_MEDIA_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+/** One image handed to the review, already in memory (compressed on upload). */
+export interface ReviewImage {
+  buffer: Buffer;
+  mediaType: VisionMediaType;
+}
 
 /**
  * Schema handed to structured outputs, which guarantees the response parses as
@@ -110,59 +107,47 @@ function getClient(): Anthropic | null {
 }
 
 export interface ReviewChorePhotoParams {
-  /** Absolute paths to the child's proof photos, already confined to the uploads dir. */
-  executionPhotoPaths: string[];
+  /** The child's proof photos, already compressed on upload (1–3, at least one required). */
+  executionPhotos: ReviewImage[];
   /**
-   * Absolute paths to the parent's optional reference/target photo(s) (blank
-   * worksheet or "golden standard" chore example), already confined to the
-   * uploads dir — how many there can be is tier-gated (see
-   * subscriptionLimits.ts). A PDF path is silently skipped here (unsupported
-   * by this vision-only call) but still passed through to the child/parent
-   * for viewing/download — see task.routes.ts. Omit or pass an empty array
-   * when the task has no reference photos.
+   * The parent's optional reference/target photo(s) (blank worksheet or
+   * "golden standard" chore example) — how many there can be is tier-gated
+   * (see subscriptionLimits.ts). Callers pass images only; PDFs are dropped
+   * before this point since the vision call can't read them. Omit or pass an
+   * empty array when the task has no reference photos.
    */
-  referencePhotoPaths?: string[];
+  referencePhotos?: ReviewImage[];
   title: string;
   description: string;
 }
 
-/** Read one image file and build its Anthropic content block, or null if unreadable/unsupported. */
-async function buildImageBlock(absolutePath: string): Promise<Anthropic.ImageBlockParam | null> {
-  const mediaType = MEDIA_TYPES[path.extname(absolutePath).toLowerCase()];
-  if (!mediaType) {
-    console.warn(`[aiVision] Unsupported image type for ${absolutePath}`);
-    return null;
-  }
+/** Build one Anthropic image block from an in-memory image. */
+function buildImageBlock({ buffer, mediaType }: ReviewImage): Anthropic.ImageBlockParam {
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') },
+  };
+}
 
-  try {
-    const imageData = (await readFile(absolutePath)).toString('base64');
-    return {
-      type: 'image',
-      source: { type: 'base64', media_type: mediaType, data: imageData },
-    };
-  } catch (error) {
-    console.error(`[aiVision] Failed to read image ${absolutePath}:`, error);
-    return null;
-  }
+/** Keep only images with a media type Anthropic vision accepts. */
+export function isSupportedVisionImage(mediaType: string): mediaType is VisionMediaType {
+  return SUPPORTED_MEDIA_TYPES.includes(mediaType);
 }
 
 /**
  * Ask Claude to review 1–3 execution photos (optionally against a reference
  * photo) and recommend a score. Returns null if the review could not be
- * produced for any reason — including when a required execution photo can't be
- * read, since a review needs at least one to say anything meaningful.
- *
- * An unreadable reference photo degrades gracefully instead: it's dropped and
- * the review proceeds in STANDARD MODE, since a corrupt optional extra is not
- * worth blocking the child's submission over.
+ * produced for any reason — a review needs at least one execution photo to say
+ * anything meaningful. Reference photos are optional and simply omitted if none
+ * are usable, with the review proceeding in STANDARD MODE.
  */
 export async function reviewChorePhoto({
-  executionPhotoPaths,
-  referencePhotoPaths,
+  executionPhotos,
+  referencePhotos,
   title,
   description,
 }: ReviewChorePhotoParams): Promise<AiReview | null> {
-  if (executionPhotoPaths.length === 0) {
+  if (executionPhotos.length === 0) {
     console.warn('[aiVision] No execution photos provided');
     return null;
   }
@@ -173,22 +158,11 @@ export async function reviewChorePhoto({
   }
 
   try {
-    const executionBlocks = await Promise.all(executionPhotoPaths.map(buildImageBlock));
-    if (executionBlocks.some((block) => block === null)) {
-      console.warn('[aiVision] One or more execution photos could not be read; skipping review');
-      return null;
-    }
+    const executionBlocks = executionPhotos.map(buildImageBlock);
 
     const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
 
-    // Each reference file that isn't a readable image (a PDF, or an
-    // unsupported/corrupt file) is silently dropped from the vision call —
-    // the review just proceeds in STANDARD MODE without it.
-    const referenceBlocks = referencePhotoPaths?.length
-      ? (await Promise.all(referencePhotoPaths.map(buildImageBlock))).filter(
-          (block): block is Anthropic.ImageBlockParam => block !== null,
-        )
-      : [];
+    const referenceBlocks = (referencePhotos ?? []).map(buildImageBlock);
 
     if (referenceBlocks.length > 0) {
       content.push({
@@ -202,7 +176,7 @@ export async function reviewChorePhoto({
       type: 'text',
       text: `EXECUTION photo${executionBlocks.length > 1 ? 's' : ''} the child submitted as proof of their work:`,
     });
-    content.push(...(executionBlocks as Anthropic.ImageBlockParam[]));
+    content.push(...executionBlocks);
 
     content.push({
       type: 'text',

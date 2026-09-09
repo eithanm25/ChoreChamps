@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { Family, SubscriptionTier } from '../entities/Family';
-import { FREE_TIER_MONTHLY_AI_LIMIT } from '../utils/subscriptionLimits';
+import { FREE_TIER_AI_LIMIT } from '../utils/subscriptionLimits';
 import { User, UserRole } from '../entities/User';
 import { ChildProfile } from '../entities/ChildProfile';
 import {
@@ -115,10 +115,11 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       tier: family.tier,
       aiUsageCount: family.aiUsageCount,
       // null means "no cap" (PREMIUM/ACADEMY) — the frontend's polite quota
-      // message only renders when this is a number.
+      // message only renders when this is a number. On FREE this is the
+      // one-time lifetime allowance left, not a monthly figure.
       aiUsagesRemaining:
         family.tier === SubscriptionTier.FREE
-          ? Math.max(0, FREE_TIER_MONTHLY_AI_LIMIT - family.aiUsageCount)
+          ? Math.max(0, FREE_TIER_AI_LIMIT - family.aiUsageCount)
           : null,
     },
   });
@@ -286,8 +287,9 @@ router.delete(
       
       res.json({ message: 'בן המשפחה הוסר בהצלחה, והמשימות שלו טופלו בהתאם' });
 
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err) {
+      console.error('[family/member-delete] failed:', err);
+      res.status(500).json({ error: 'שגיאה בהסרת בן המשפחה. נסו שוב בעוד רגע.' });
     }
   }
 );

@@ -34,10 +34,11 @@ export class Family {
   tier!: SubscriptionTier;
 
   /**
-   * Claude AI photo-review requests used this month, across the whole household.
-   * Only enforced as a cap on FREE tier (see subscriptionLimits.ts); tracked for
-   * every tier for visibility. Nothing currently resets this monthly — see the
-   * task.routes.ts submit handler's docstring for what a real reset job needs.
+   * Total Claude AI photo-review requests ever used by this household. This is a
+   * ONE-TIME lifetime counter, not a monthly quota: it only ever grows. Enforced
+   * as a hard cap on FREE tier (FREE_TIER_AI_LIMIT in subscriptionLimits.ts) —
+   * once reached, AI review stays locked until the family buys a plan. Tracked
+   * for every tier for visibility.
    */
   @Column({ type: 'int', default: 0 })
   aiUsageCount!: number;
@@ -51,10 +52,10 @@ export class Family {
   childInviteCode!: string | null;
 
   /**
-   * Human-memorable household code (4–6 digits) used for device-agnostic login:
-   * any family member can log in from any device with familyCode + their name +
+   * Human-memorable 6-digit household code used for device-agnostic login: any
+   * family member can log in from any device with familyCode + their name +
    * their password/PIN, with no UUID or saved link required. Generated once at
-   * family creation (see family.routes.ts) with a DB-backed uniqueness retry.
+   * family creation (see services/familyCode.ts) with a DB-backed uniqueness retry.
    */
   @Column({ type: 'varchar', length: 6, unique: true, nullable: true })
   familyCode!: string | null;

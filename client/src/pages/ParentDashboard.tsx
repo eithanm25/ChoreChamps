@@ -97,7 +97,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     }
   };
 
-  // שליפת פרטי המשפחה — קוד ההתחברות, מסלול המנוי ומכסת בדיקות ה-Aי החודשית
+  // שליפת פרטי המשפחה — קוד ההתחברות, מסלול המנוי ומכסת בדיקות ה-AI החינמיות (חד-פעמית)
   const refreshFamilyInfo = async () => {
     try {
       const familyRes = await api.get('/api/family/me');

@@ -47,7 +47,7 @@ export class Submission {
   @Column({ type: 'uuid', nullable: true })
   childId!: string | null;
 
-  /** URLs of uploaded proof photos (stored as a comma-separated simple-array). */
+  /** R2 object keys for the compressed proof photos (comma-separated simple-array). */
   @Column({ type: 'simple-array' })
   photoUrls!: string[];
 

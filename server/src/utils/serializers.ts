@@ -1,4 +1,5 @@
 import { Task, TaskStatus } from '../entities/Task';
+import { publicUrlForKey, isStorageKey } from '../services/storage';
 
 export interface PublicMember {
   id: string;
@@ -18,12 +19,11 @@ export function toPublicMember(user: MemberLike | null | undefined): PublicMembe
   return { id: user.id, name: user.name };
 }
 
-/** Normalize a stored photo filename into a path servable from /uploads. */
-export function toPublicPhotoUrl(filename: string): string {
-  if (/^https?:\/\//i.test(filename) || filename.startsWith('/uploads/')) {
-    return filename;
-  }
-  return `/uploads/${filename}`;
+/** Turn a stored photo reference into an absolute, browser-loadable URL. */
+export function toPublicPhotoUrl(ref: string): string {
+  // A bare R2 object key → resolve against the public bucket domain.
+  // Anything already absolute (or a legacy '/uploads/x') is passed through.
+  return isStorageKey(ref) ? publicUrlForKey(ref) : ref;
 }
 
 export interface TaskDto {

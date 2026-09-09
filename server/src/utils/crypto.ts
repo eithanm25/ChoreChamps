@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'crypto';
 
 const KEY_LENGTH = 64;
 
@@ -45,11 +45,13 @@ export function generateShortInviteCode(): string {
 }
 
 /**
- * Generate a 4-digit numeric household code (e.g. "4092") for device-agnostic
- * login. Uniqueness against existing families is the caller's responsibility
- * (see generateFamilyCode in family.routes.ts) — a random 4-digit code alone
- * has only 10,000 possible values, so collisions are expected at scale.
+ * Generate a 6-digit numeric household code (e.g. "830715") for device-agnostic
+ * login. 900,000 possible values — wide enough that collisions are rare and a
+ * code is not feasibly guessable (combined with the name + PIN also required at
+ * login, and API rate limiting). Uses crypto.randomInt for a uniform, unbiased,
+ * crypto-grade draw. Uniqueness against existing families is still the caller's
+ * responsibility — see generateUniqueFamilyCode in services/familyCode.ts.
  */
-export function generateFourDigitCode(): string {
-  return String(Math.floor(1000 + Math.random() * 9000));
+export function generateSixDigitCode(): string {
+  return String(randomInt(100000, 1000000));
 }

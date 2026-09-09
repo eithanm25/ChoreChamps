@@ -1,7 +1,11 @@
 import { SubscriptionTier } from '../entities/Family';
 
-/** FREE tier's monthly cap on Claude AI photo reviews per family (see task.routes.ts submit handler). */
-export const FREE_TIER_MONTHLY_AI_LIMIT = 5;
+/**
+ * FREE tier's ONE-TIME lifetime allowance of Claude AI photo reviews per family
+ * (see task.routes.ts submit handler). This is not a recurring monthly quota:
+ * once a household has used all 5, AI review stays locked until they buy a plan.
+ */
+export const FREE_TIER_AI_LIMIT = 5;
 
 /** Max child proof photos per task submission, by tier. */
 export const MAX_EXECUTION_PHOTOS_BY_TIER: Record<SubscriptionTier, number> = {

@@ -2,6 +2,12 @@ import { createHmac } from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'chorechamps-dev-secret-change-in-production';
 
+// A weak/absent secret in production makes every session token forgeable — fail
+// the deploy loudly rather than boot an insecure server.
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || JWT_SECRET.length < 32)) {
+  throw new Error('JWT_SECRET must be set to a strong value (>=32 chars) in production');
+}
+
 /** Sessions expire after 30 days — long enough for a household app, but bounded
  * so a lost/stolen device or a stale browser session doesn't stay valid forever. */
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;

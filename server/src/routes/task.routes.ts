@@ -1,5 +1,4 @@
 import { Router, Response, NextFunction } from 'express';
-import { stat, unlink } from 'fs/promises';
 import { AppDataSource } from '../data-source';
 import { Task, TaskStatus } from '../entities/Task';
 import { Submission, AiReview } from '../entities/Submission';
@@ -12,32 +11,67 @@ import {
   requireChild,
   requireParent,
 } from '../middleware/auth';
+import { submitLimiter } from '../middleware/rateLimit';
 import { canAcceptTask, canCancelSubmission, childHasPendingTask } from '../services/taskGuardrails';
 import { parseReviewAction, runReview } from '../services/taskReview';
-import { reviewChorePhoto } from '../services/aiVision';
-import { resolveUploadPath } from '../utils/uploads';
+import {
+  reviewChorePhoto,
+  isSupportedVisionImage,
+  type ReviewImage,
+} from '../services/aiVision';
+import { compressPhoto } from '../services/imageProcessing';
+import {
+  uploadObject,
+  downloadObject,
+  deleteObjects,
+  contentTypeForKey,
+} from '../services/storage';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import {
-  FREE_TIER_MONTHLY_AI_LIMIT,
+  FREE_TIER_AI_LIMIT,
   MAX_EXECUTION_PHOTOS_BY_TIER,
   MAX_REFERENCE_PHOTOS_BY_TIER,
   tierAllowsPdfUploads,
 } from '../utils/subscriptionLimits';
 import multer from 'multer';
-import path from 'path';
 
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Files are held in memory, then compressed and streamed to object storage
+// (Cloudflare R2) — nothing touches the local disk.
+const storage = multer.memoryStorage();
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Compress an uploaded image and store it in R2; PDFs (ACADEMY reference
+ * uploads) are stored as-is since they're never image-compressed. Returns the
+ * object key to persist on the task/submission.
+ */
+async function storeUpload(file: Express.Multer.File, prefix: string): Promise<string> {
+  if (file.mimetype === 'application/pdf') {
+    return uploadObject(file.buffer, 'application/pdf', prefix);
+  }
+  const { buffer, contentType } = await compressPhoto(file.buffer, file.mimetype);
+  return uploadObject(buffer, contentType, prefix);
+}
+
+/** Load stored reference photos as in-memory images for the AI review, skipping PDFs and unreadable objects. */
+async function loadReferenceImages(keys: string[]): Promise<ReviewImage[]> {
+  const images = await Promise.all(
+    keys.map(async (key): Promise<ReviewImage | null> => {
+      const mediaType = contentTypeForKey(key);
+      if (!mediaType || !isSupportedVisionImage(mediaType)) {
+        return null;
+      }
+      try {
+        return { buffer: await downloadObject(key), mediaType };
+      } catch (err) {
+        console.warn(`[tasks] could not load reference photo ${key} for AI review:`, err);
+        return null;
+      }
+    }),
+  );
+  return images.filter((img): img is ReviewImage => img !== null);
+}
 
 /** One multer instance per tier, built once — file-count cap and allowed types both vary by tier. */
 function buildExecutionUpload(tier: SubscriptionTier): ReturnType<typeof multer> {
@@ -224,6 +258,9 @@ router.post(
     }
 
     const referencePhotoFiles = (req.files as Express.Multer.File[] | undefined) ?? [];
+    const referenceKeys = await Promise.all(
+      referencePhotoFiles.map((f) => storeUpload(f, `references/${parent.family!.id}`)),
+    );
 
     const task = taskRepo.create({
       title,
@@ -234,7 +271,7 @@ router.post(
       family: parent.family,
       createdBy: parent,
       assignedTo: assignedChild,
-      referencePhotoUrls: referencePhotoFiles.length > 0 ? referencePhotoFiles.map((f) => f.filename) : null,
+      referencePhotoUrls: referenceKeys.length > 0 ? referenceKeys : null,
       useAiReview: parseAiReviewFlag(useAiReview),
     });
 
@@ -469,7 +506,7 @@ router.post(
     await submissionRepo.remove(submission);
     // Best-effort: the submission row is already gone, so a failed delete here
     // only costs disk space and must not block the cancellation from completing.
-    await deleteLocalPhotos(photoUrls);
+    await deleteObjects(photoUrls);
 
     task.status = TaskStatus.PENDING;
     task.awardedBonus = null;
@@ -488,18 +525,23 @@ router.post(
 
 /**
  * POST /api/tasks/:taskId/submit
- * Child submits a proof photo, moving the task from 'pending' (first submission)
+ * Child submits proof photo(s), moving the task from 'pending' (first submission)
  * or 'rejected' (resubmission after corrections) to 'completed'.
  *
- * photoUrl is a local path under the uploads directory. The photo is sent to
- * Anthropic vision for a structured review (summary + recommended score +
- * reasoning) which is stored on the submission for the parent to see. A failed
- * review is not fatal — the submission is saved with aiSummary null.
+ * Photos are compressed and stored in R2. Each is sent to Anthropic vision for a
+ * structured review (summary + recommended score + reasoning) stored on the
+ * submission for the parent. A failed review is not fatal — the submission is
+ * saved with aiSummary null.
+ *
+ * submitLimiter runs after requireChild (so it can key on the child's user id)
+ * and before handlePhotoUpload (so a spammer is rejected before we parse a
+ * multipart body or touch storage / the Anthropic API).
  */
 router.post(
   '/:taskId/submit',
   requireAuth,
   requireChild,
+  submitLimiter,
   handlePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
     const taskId = req.params.taskId as string;
@@ -554,44 +596,59 @@ router.post(
         return;
       }
 
-      const savedPhotoNames = files.map((file) => file.filename);
+      // AI-review quota gate runs before any upload, so a blocked free-tier
+      // submission leaves nothing to clean up. The parent may also opt a task
+      // out of AI review at creation (useAiReview = false), in which case the
+      // submission still goes through, just ungraded.
+      const wantsAiReview = task.useAiReview;
+      if (
+        wantsAiReview &&
+        task.family.tier === SubscriptionTier.FREE &&
+        task.family.aiUsageCount >= FREE_TIER_AI_LIMIT
+      ) {
+        res.status(403).json({
+          error: 'ניצלתם את כל בדיקות ה-AI החינמיות שלכם! 🤖 שדרגו למנוי צ׳אמפ כדי לפתוח בדיקות נוספות',
+        });
+        return;
+      }
 
-      // The parent may have opted this specific task out of AI review at
-      // creation time (useAiReview = false) — skip the quota check and the
-      // API call entirely in that case; the submission still goes through,
-      // just ungraded.
+      // Compress each photo, then store it in R2. The compressed buffers are
+      // reused for the AI call, so there is no download round-trip.
+      const processed = await Promise.all(
+        files.map((file) => compressPhoto(file.buffer, file.mimetype)),
+      );
+      const photoKeys = await Promise.all(
+        processed.map((p) => uploadObject(p.buffer, p.contentType, `submissions/${task.id}`)),
+      );
+
       let aiSummary: AiReview | null = null;
-      if (task.useAiReview) {
-        const tier = task.family.tier;
-        if (tier === SubscriptionTier.FREE && task.family.aiUsageCount >= FREE_TIER_MONTHLY_AI_LIMIT) {
-          // Files are already written to disk by multer at this point, but the
-          // submission itself never happens — clean them up rather than leak them.
-          await deleteLocalPhotos(savedPhotoNames);
-          res.status(403).json({
-            error: 'הגעתם למגבלת בדיקות ה-AI החינמיות שלכם לחודש זה! 🤖 שדרגו למנוי צ׳אמפ כדי לפתוח בדיקות נוספות',
-          });
-          return;
+      if (wantsAiReview) {
+        const executionPhotos: ReviewImage[] = [];
+        for (const p of processed) {
+          if (isSupportedVisionImage(p.contentType)) {
+            executionPhotos.push({ buffer: p.buffer, mediaType: p.contentType });
+          }
         }
 
-        // Runs before the transaction: this is a ~6s network call and must not
-        // hold a DB transaction open. reviewChorePhoto never throws — it returns
-        // null when the review is unavailable.
-        aiSummary = await reviewChorePhoto({
-          executionPhotoPaths: files.map((file) => file.path),
-          referencePhotoPaths: (task.referencePhotoUrls ?? [])
-            .map(resolveUploadPath)
-            .filter((p): p is string => p !== null),
-          title: task.title,
-          description: task.description,
-        });
+        if (executionPhotos.length > 0) {
+          // Runs before the transaction: this is a ~6s network call and must not
+          // hold a DB transaction open. reviewChorePhoto never throws — it returns
+          // null when the review is unavailable.
+          aiSummary = await reviewChorePhoto({
+            executionPhotos,
+            referencePhotos: await loadReferenceImages(task.referencePhotoUrls ?? []),
+            title: task.title,
+            description: task.description,
+          });
 
-        // Only a review that actually ran counts against quota — an outage or
-        // missing API key (reviewChorePhoto returning null) shouldn't cost the
-        // family one of their free checks. Tracked for every tier, even
-        // though only FREE is capacity-limited above, so usage stays visible
-        // for Premium/Academy households too.
-        if (aiSummary !== null) {
-          await AppDataSource.getRepository(Family).increment({ id: task.family.id }, 'aiUsageCount', 1);
+          // Only a review that actually ran counts against quota — an outage or
+          // missing API key (reviewChorePhoto returning null) shouldn't cost the
+          // family one of their free checks. Tracked for every tier, even
+          // though only FREE is capacity-limited above, so usage stays visible
+          // for Premium/Academy households too.
+          if (aiSummary !== null) {
+            await AppDataSource.getRepository(Family).increment({ id: task.family.id }, 'aiUsageCount', 1);
+          }
         }
       }
 
@@ -617,7 +674,7 @@ router.post(
         const created = manager.create(Submission, {
           taskId: task.id,
           childId: child.id,
-          photoUrls: savedPhotoNames,
+          photoUrls: photoKeys,
           aiSummary,
         });
         await manager.save(created);
@@ -625,6 +682,9 @@ router.post(
       });
 
       if (!submission) {
+        // The status flip lost the race (task already submitted elsewhere) —
+        // the photos we just uploaded belong to no submission, so drop them.
+        await deleteObjects(photoKeys);
         res.status(409).json({ error: 'המשימה כבר נשלחה להורים' });
         return;
       }
@@ -704,7 +764,7 @@ router.post(
 
       // Local cleanup runs after the transaction is committed: a failed delete
       // costs disk space and must never roll back a state change already saved.
-      await deleteLocalPhotos(outcome.photoUrls);
+      await deleteObjects(outcome.photoUrls);
 
       if (outcome.action === 'reject') {
         res.json({
@@ -746,29 +806,6 @@ router.post(
   },
 );
 
-/**
- * Delete proof photos from the local uploads folder to save disk space.
- * Best-effort: a photo that is already gone or unreadable is logged, not thrown.
- */
-async function deleteLocalPhotos(photoUrls: string[]): Promise<void> {
-  await Promise.all(
-    photoUrls.map(async (photoUrl) => {
-      const absolutePath = resolveUploadPath(photoUrl);
-      if (!absolutePath) {
-        return;
-      }
-
-      try {
-        await unlink(absolutePath);
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== 'ENOENT') {
-          console.error(`[tasks] Failed to delete ${absolutePath}:`, error);
-        }
-      }
-    }),
-  );
-}
 
 // 1. ראוט מחיקת משימה (רק להורים של אותה משפחה)
 router.delete(
@@ -808,10 +845,11 @@ router.delete(
       ];
 
       await taskRepo.remove(task);
-      await deleteLocalPhotos(photoUrls);
+      await deleteObjects(photoUrls);
       res.json({ message: 'המשימה נמחקה בהצלחה' });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err) {
+      console.error('[tasks/delete] failed:', err);
+      res.status(500).json({ error: 'שגיאה במחיקת המשימה. נסו שוב בעוד רגע.' });
     }
   }
 );
@@ -902,8 +940,9 @@ router.put(
 
       await taskRepo.save(task);
       res.json({ task: toTaskDto(task) });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err) {
+      console.error('[tasks/update] failed:', err);
+      res.status(500).json({ error: 'שגיאה בעדכון המשימה. נסו שוב בעוד רגע.' });
     }
   }
 );

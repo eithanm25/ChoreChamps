@@ -183,8 +183,9 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                   value={familyForm.familyCode}
                   onChange={handleFamilyChange}
                   className="w-full px-4 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-left font-mono tracking-widest text-lg"
-                  placeholder="4092"
+                  placeholder="830715"
                   inputMode="numeric"
+                  maxLength={6}
                   required
                   disabled={loading}
                 />
