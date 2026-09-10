@@ -363,18 +363,18 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 text-right font-sans" dir="rtl">
+    <div className="min-h-screen bg-slate-900 text-white p-4 sm:p-6 text-right font-sans" dir="rtl">
       {confirmDialog}
-      <div className="max-w-6xl mx-auto flex flex-col gap-6">
+      <div className="max-w-6xl mx-auto flex flex-col gap-5 sm:gap-6">
 
         {dashboardMessage && (
           <MessageBanner type={dashboardMessage.type} text={dashboardMessage.text} onDismiss={() => setDashboardMessage(null)} />
         )}
 
         {/* ראש הדף - כותרת עליונה */}
-        <header className="bg-slate-800/60 backdrop-blur border border-slate-700/60 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
-          <div>
-            <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-400">
+        <header className="bg-slate-800/60 backdrop-blur border border-slate-700/60 p-5 sm:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
+          <div className="w-full md:w-auto">
+            <h1 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-400 leading-tight">
               משפחת {familyName} — מרכז בקרה להורים 🚀
             </h1>
             <p className="text-slate-400 text-xs mt-1">שלום {user.name}, כאן תוכל לנהל משימות, לעקוב אחר התקדמות הילדים ולחלק דמי כיס חכמים</p>
@@ -384,7 +384,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap w-full md:w-auto justify-between md:justify-end">
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
@@ -420,11 +420,11 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
 
         {subscriptionOpen && <SubscriptionPage currentTier={familyTier} onClose={() => setSubscriptionOpen(false)} />}
 
-        <nav className="bg-slate-800/40 p-1.5 rounded-full ring-1 ring-slate-700/50 flex gap-2 w-full max-w-lg overflow-x-auto">
+        <nav className="bg-slate-800/40 p-1.5 rounded-2xl sm:rounded-full ring-1 ring-slate-700/50 flex flex-col sm:flex-row gap-2 w-full sm:max-w-lg">
           <button
             type="button"
             onClick={() => setMainTab('family')}
-            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+            className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
               mainTab === 'family' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -433,7 +433,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
           <button
             type="button"
             onClick={() => setMainTab('tasks')}
-            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+            className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
               mainTab === 'tasks' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -442,7 +442,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
           <button
             type="button"
             onClick={() => setMainTab('rewards')}
-            className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+            className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
               mainTab === 'rewards' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -452,7 +452,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
             <button
               type="button"
               onClick={() => setMainTab('wallet')}
-              className={`flex-1 py-2 px-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+              className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab === 'wallet' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -463,7 +463,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
 
         {/* === טאב 1: ניהול חברי המשפחה והוספת פרופילים === */}
         {mainTab === 'family' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
             {/* כרטיסי חברי המשפחה */}
             <section className="lg:col-span-2 flex flex-col gap-4">
               <h2 className="text-lg font-bold text-slate-300 flex items-center gap-2">
@@ -477,14 +477,15 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                       member.role === 'parent' ? 'bg-slate-800/40 border-slate-700/50' : 'bg-indigo-950/20 border-indigo-500/20 shadow-indigo-500/5'
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="font-bold text-white text-base">{member.name}</h3>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        member.role === 'parent' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      }`}>
-                        {member.role === 'parent' ? 'הורה מנהל' : 'צ׳אמפ / ילד'}
-                      </span>
-                      {member.id !== user.id && (
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <h3 className="font-bold text-white text-base min-w-0 break-words">{member.name}</h3>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${
+                          member.role === 'parent' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        }`}>
+                          {member.role === 'parent' ? 'הורה מנהל' : 'צ׳אמפ / ילד'}
+                        </span>
+                        {member.id !== user.id && (
                           <button
                             type="button"
                             onClick={() => handleDeleteMember(member.id, member.name)}
@@ -494,6 +495,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                             🗑️
                           </button>
                         )}
+                      </div>
                     </div>
                     <div className="text-xs text-slate-400 flex flex-col gap-1.5 pt-2 border-t border-slate-700/40">
                       {member.email && <p>📧 אימייל: <span className="text-slate-300">{member.email}</span></p>}

@@ -612,7 +612,7 @@ export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentT
                     {/* === טאב משימות שאושרו === */}
                     {activeTab === 'approved' && (
                       <div className="flex flex-col gap-2 pt-2 bg-slate-900/20 p-3 rounded-xl ring-1 ring-slate-800">
-                        <div className="grid grid-cols-2 gap-2 text-xs font-bold text-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold text-center">
                           <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 p-2 rounded-lg">🎯 ציון איכות: {task.finalScore}/100</div>
                           <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-2 rounded-lg">🎁 בונוס שניתן: {Number(task.awardedBonus || 0).toFixed(2)} ₪</div>
                         </div>
