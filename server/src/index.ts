@@ -8,6 +8,7 @@ import familyRoutes from './routes/family.routes';
 import taskRoutes from './routes/task.routes';
 import rewardRoutes from './routes/reward.routes';
 import walletRoutes from './routes/wallet.routes';
+import paymentRoutes from './routes/payment.routes';
 import { authLimiter } from './middleware/rateLimit';
 
 dotenv.config();
@@ -43,6 +44,12 @@ app.use(
     },
   }),
 );
+// Paddle billing webhook needs the untouched raw request body to verify its
+// HMAC signature, so it's mounted here — before the app-wide JSON parser
+// below would consume and reserialize the stream. The route supplies its own
+// express.raw() body parser; nothing else in this router needs express.json().
+app.use('/api/payments', paymentRoutes);
+
 app.use(express.json({ limit: '1mb' })); // JSON bodies are small; photo uploads go through multer, not here
 
 // Liveness probe for Render/Railway. Returns 200 as soon as the process is up;

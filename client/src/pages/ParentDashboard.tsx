@@ -418,7 +418,14 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
           />
         )}
 
-        {subscriptionOpen && <SubscriptionPage currentTier={familyTier} onClose={() => setSubscriptionOpen(false)} />}
+        {subscriptionOpen && (
+          <SubscriptionPage
+            currentTier={familyTier}
+            onClose={() => setSubscriptionOpen(false)}
+            familyId={user.familyId ?? null}
+            email={user.email}
+          />
+        )}
 
         <nav className="bg-slate-800/40 p-1.5 rounded-2xl sm:rounded-full ring-1 ring-slate-700/50 flex flex-col sm:flex-row gap-2 w-full sm:max-w-lg">
           <button

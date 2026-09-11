@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { SubscriptionTier } from '../types/family';
+import { openCheckout, priceIdForTier } from '../services/paddle';
+import MessageBanner from '../components/MessageBanner';
 
 interface SubscriptionPageProps {
   currentTier: SubscriptionTier;
   onClose: () => void;
+  /** Round-trips through Paddle as custom_data so the webhook knows which family to upgrade. Purchase is disabled without it. */
+  familyId: string | null;
+  /** Pre-fills the Paddle checkout's customer email, when known. */
+  email?: string;
 }
 
 interface PlanCard {
@@ -59,13 +65,37 @@ const PLANS: PlanCard[] = [
 /**
  * Full-screen comparative pricing overlay — reached only from a parent's
  * profile settings, and only while the family is still on FREE (see
- * ProfileSettingsPanel). Purchase buttons are placeholders: real checkout
- * wires into Paddle's overlay once this deploys to production.
+ * ProfileSettingsPanel). Purchase opens the real Paddle Checkout overlay;
+ * until the account's live price IDs/client token are set in the environment
+ * (still placeholders — see client/.env.example) it shows a friendly Hebrew
+ * message instead of a broken checkout.
  */
-export default function SubscriptionPage({ currentTier, onClose }: SubscriptionPageProps): React.ReactNode {
-  const handlePurchase = (tier: SubscriptionTier) => {
-    // TODO: hook up to the Paddle SDK checkout overlay once deployed to production.
-    console.log('[checkout] placeholder purchase click for tier:', tier);
+export default function SubscriptionPage({ currentTier, onClose, familyId, email }: SubscriptionPageProps): React.ReactNode {
+  const [purchasingTier, setPurchasingTier] = useState<SubscriptionTier | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const handlePurchase = async (tier: SubscriptionTier) => {
+    setCheckoutError(null);
+
+    if (!familyId) {
+      setCheckoutError('לא נמצאה משפחה מחוברת — התחברו מחדש ונסו שוב');
+      return;
+    }
+
+    const priceId = priceIdForTier(tier);
+    if (!priceId) {
+      setCheckoutError('התשלומים עדיין לא הוגדרו במערכת — נסו שוב בקרוב');
+      return;
+    }
+
+    setPurchasingTier(tier);
+    try {
+      await openCheckout({ priceId, familyId, email });
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'שגיאה בפתיחת מסך התשלום');
+    } finally {
+      setPurchasingTier(null);
+    }
   };
 
   return (
@@ -87,6 +117,10 @@ export default function SubscriptionPage({ currentTier, onClose }: SubscriptionP
             ✕
           </button>
         </div>
+
+        {checkoutError && (
+          <MessageBanner type="error" text={checkoutError} onDismiss={() => setCheckoutError(null)} />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
           {PLANS.map((plan) => {
@@ -127,17 +161,22 @@ export default function SubscriptionPage({ currentTier, onClose }: SubscriptionP
                   <span className="w-full py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-black text-center">
                     ✨ המסלול הפעיל שלכם כרגע
                   </span>
+                ) : plan.tier === 'free' ? (
+                  <span className="w-full py-2.5 rounded-full bg-slate-800/60 border border-slate-700/50 text-slate-400 text-xs font-black text-center">
+                    מסלול חינמי — זמין תמיד
+                  </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => handlePurchase(plan.tier)}
-                    className={`w-full py-2.5 rounded-full text-sm font-black shadow-lg transition-all ${
+                    disabled={purchasingTier !== null}
+                    className={`w-full py-2.5 rounded-full text-sm font-black shadow-lg transition-all disabled:opacity-50 ${
                       plan.highlight
                         ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-600 hover:to-violet-600'
                         : 'bg-gradient-to-r from-amber-400 to-orange-400 text-slate-900 hover:brightness-105'
                     }`}
                   >
-                    קנה עכשיו 🚀
+                    {purchasingTier === plan.tier ? 'פותח מסך תשלום...' : 'קנה עכשיו 🚀'}
                   </button>
                 )}
               </div>
