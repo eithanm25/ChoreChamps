@@ -29,11 +29,14 @@ import {
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import {
   FREE_TIER_AI_LIMIT,
+  MAX_DAILY_SUBMISSIONS_PER_FAMILY,
   MAX_EXECUTION_PHOTOS_BY_TIER,
+  MAX_PENDING_TASKS_PER_FAMILY,
   MAX_REFERENCE_PHOTOS_BY_TIER,
   tierAllowsPdfUploads,
 } from '../utils/subscriptionLimits';
 import multer from 'multer';
+import { MoreThanOrEqual } from 'typeorm';
 
 // Files are held in memory, then compressed and streamed to object storage
 // (Cloudflare R2) — nothing touches the local disk.
@@ -226,6 +229,19 @@ router.post(
 
     const taskRepo = AppDataSource.getRepository(Task);
     const userRepo = AppDataSource.getRepository(User);
+
+    // Anti-abuse: flat cap on concurrently pending tasks per family, regardless
+    // of tier — stops a runaway script (or a compromised account) from flooding
+    // the board with unlimited assignments.
+    const pendingTaskCount = await taskRepo.count({
+      where: { family: { id: parent.family.id }, status: TaskStatus.PENDING },
+    });
+    if (pendingTaskCount >= MAX_PENDING_TASKS_PER_FAMILY) {
+      res.status(400).json({
+        error: `לא ניתן לפרסם משימה חדשה. ישנן ${MAX_PENDING_TASKS_PER_FAMILY} משימות במצב ממתין (Pending). אנא אשרו או מחקו משימות קיימות`,
+      });
+      return;
+    }
 
     let taskStatus = TaskStatus.OPEN;
     let assignedChild: User | null = null;
@@ -593,6 +609,26 @@ router.post(
       });
       if (alreadySubmitted > 0) {
         res.status(409).json({ error: 'למשימה זו כבר הוגשה הוכחה בעבר' });
+        return;
+      }
+
+      // Anti-abuse: flat cap on proof submissions per family per calendar day,
+      // regardless of tier — bounds worst-case storage writes and Anthropic
+      // spend from a runaway script across the whole household, not just one
+      // child. Runs before any upload/AI work so a blocked request costs nothing.
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const todaysSubmissionCount = await submissionRepo.count({
+        where: {
+          submittedAt: MoreThanOrEqual(startOfToday),
+          task: { family: { id: task.family.id } },
+        },
+        relations: ['task', 'task.family'],
+      });
+      if (todaysSubmissionCount >= MAX_DAILY_SUBMISSIONS_PER_FAMILY) {
+        res.status(400).json({
+          error: `הגעתם למגבלת הגשות המשימות היומית (מקסימום ${MAX_DAILY_SUBMISSIONS_PER_FAMILY} משימות ליום למשפחה)`,
+        });
         return;
       }
 

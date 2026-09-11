@@ -295,22 +295,30 @@ export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentT
       )}
 
       {/* תפריט הטאבים */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/50 pb-4 mb-6">
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-700/50 pb-4 mb-6">
         <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
           <span>📋</span> מעקב משימות ביתיות
         </h2>
 
-        <nav className="bg-slate-900/60 p-1 rounded-full ring-1 ring-slate-700/60 flex gap-1 flex-wrap">
+        {/* כרטיסי סטטוס: מוערמים כשורות מלאות במסך צר, ועוברים לרשת 2 עמודות מ-lg ומעלה */}
+        <nav className="w-full lg:w-auto flex flex-col space-y-2 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => { setActiveTab(tab.key); setEditingTaskId(null); setReviewingTaskId(null); }}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                activeTab === tab.key ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+              className={`w-full flex items-center justify-between border p-3 rounded-xl transition-all ${
+                activeTab === tab.key
+                  ? 'bg-indigo-500/15 border-indigo-500/60'
+                  : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
               }`}
             >
-              {tab.label} ({tab.count})
+              <span className={`text-sm font-bold ${activeTab === tab.key ? 'text-white' : 'text-slate-300'}`}>
+                {tab.label}
+              </span>
+              <span className="bg-blue-600/20 text-blue-400 font-bold px-3 py-1 rounded-full text-xs">
+                {tab.count}
+              </span>
             </button>
           ))}
         </nav>

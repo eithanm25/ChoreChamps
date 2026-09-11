@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { Family, SubscriptionTier } from '../entities/Family';
-import { FREE_TIER_AI_LIMIT } from '../utils/subscriptionLimits';
+import { FREE_TIER_AI_LIMIT, MAX_CHILDREN_PER_FAMILY } from '../utils/subscriptionLimits';
 import { User, UserRole } from '../entities/User';
 import { ChildProfile } from '../entities/ChildProfile';
 import {
@@ -185,6 +185,18 @@ router.post(
 
     const userRepo = AppDataSource.getRepository(User);
     const profileRepo = AppDataSource.getRepository(ChildProfile);
+
+    // Anti-abuse: flat cap on child profiles per family, enforced regardless of
+    // subscription tier — bounds worst-case row growth from a runaway script.
+    const existingChildCount = await userRepo.count({
+      where: { family: { id: parent.family.id }, role: UserRole.CHILD },
+    });
+    if (existingChildCount >= MAX_CHILDREN_PER_FAMILY) {
+      res.status(400).json({
+        error: `הגעת למגבלת הפרופילים המקסימלית (${MAX_CHILDREN_PER_FAMILY} ילדים למשפחה)`,
+      });
+      return;
+    }
 
     const child = userRepo.create({
       name: name.trim(),

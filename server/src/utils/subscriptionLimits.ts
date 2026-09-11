@@ -32,3 +32,20 @@ export function tierAllowsPdfUploads(tier: SubscriptionTier): boolean {
 export function tierAllowsWallet(tier: SubscriptionTier): boolean {
   return tier === SubscriptionTier.ACADEMY;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Flat anti-abuse ceilings — NOT tier-gated. These apply to every family
+// regardless of plan; they exist to bound worst-case DB row growth, storage
+// use, and Anthropic spend from a runaway script or a compromised account,
+// not to upsell. See family.routes.ts (add-child) and task.routes.ts
+// (task creation, proof submission) for where each is enforced.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Hard cap on child profiles per family. */
+export const MAX_CHILDREN_PER_FAMILY = 6;
+
+/** Hard cap on tasks a family may have sitting in 'pending' (assigned, not yet submitted) at once. */
+export const MAX_PENDING_TASKS_PER_FAMILY = 10;
+
+/** Hard cap on proof submissions a family may make across the whole household in one calendar day. */
+export const MAX_DAILY_SUBMISSIONS_PER_FAMILY = 15;
