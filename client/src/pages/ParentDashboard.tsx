@@ -15,6 +15,7 @@ import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
 import AvatarBadge from '../components/AvatarBadge';
 import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import SubscriptionPage from './SubscriptionPage';
+import LandingPage from './LandingPage';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -45,6 +46,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
   // פאנל הגדרות פרופיל (אווטאר, סיסמה, קוד משפחה) ומסך שדרוג מסלול — נפתחים מכותרת הדף
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [form, setForm] = useState({ name: '', password: '' });
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
@@ -396,6 +398,14 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
               <span className="text-slate-400 text-sm">⚙️</span>
             </button>
             <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              title="מדריך שימוש"
+              className="w-9 h-9 shrink-0 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 flex items-center justify-center text-sm font-black transition-all"
+            >
+              ?
+            </button>
+            <button
               onClick={onLogout}
               className="px-5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-sm font-bold transition-all shadow-lg"
             >
@@ -403,6 +413,8 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
             </button>
           </div>
         </header>
+
+        {helpOpen && <LandingPage mode="modal" onClose={() => setHelpOpen(false)} />}
 
         {settingsOpen && (
           <ProfileSettingsPanel

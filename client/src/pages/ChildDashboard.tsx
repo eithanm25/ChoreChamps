@@ -14,6 +14,7 @@ import AvatarBadge from '../components/AvatarBadge';
 import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import type { FamilyInfo } from '../types/family';
 import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads, tierAllowsWallet } from '../types/family';
+import LandingPage from './LandingPage';
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -81,6 +82,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
   // פאנל הגדרות פרופיל (אווטאר, PIN, קוד משפחה) — נפתח מכותרת הדף. אין אפשרות
   // שדרוג מסלול מכאן בכלל — זו זכות של הורים בלבד, ראו ProfileSettingsPanel
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // סטייט לצפייה באחים
   const [selectedSibling, setSelectedSibling] = useState<FamilyMember | null>(null);
@@ -391,9 +393,19 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
               <span className="text-slate-200 text-xs font-bold">{user.name.split(' ')[0]}</span>
               <span className="text-slate-400 text-xs">⚙️</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              title="מדריך שימוש"
+              className="w-8 h-8 shrink-0 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 flex items-center justify-center text-xs font-black transition-all"
+            >
+              ?
+            </button>
             <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
           </div>
         </header>
+
+        {helpOpen && <LandingPage mode="modal" onClose={() => setHelpOpen(false)} />}
 
         {settingsOpen && (
           <ProfileSettingsPanel
@@ -471,7 +483,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
 
                   {myPendingTask.referencePhotoUrls.length > 0 && (
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-slate-400 text-[10px] font-bold">📎 דף העבודה / התקן שצריך להשלים:</span>
+                      <span className="text-slate-400 text-[10px] font-bold">📎הקבצים שהועלו על ידי ההורה:</span>
                       <div className="flex gap-2 overflow-x-auto py-1">
                         {myPendingTask.referencePhotoUrls.map((url, idx) => (
                           <MediaThumbnail

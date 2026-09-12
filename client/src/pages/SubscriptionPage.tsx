@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { SubscriptionTier } from '../types/family';
 import { openCheckout, priceIdForTier } from '../services/paddle';
 import MessageBanner from '../components/MessageBanner';
+import { PLANS } from '../data/subscriptionPlans';
 
 interface SubscriptionPageProps {
   currentTier: SubscriptionTier;
@@ -11,56 +12,6 @@ interface SubscriptionPageProps {
   /** Pre-fills the Paddle checkout's customer email, when known. */
   email?: string;
 }
-
-interface PlanCard {
-  tier: SubscriptionTier;
-  name: string;
-  price: string;
-  priceNote: string;
-  features: string[];
-  highlight?: boolean;
-}
-
-const PLANS: PlanCard[] = [
-  {
-    tier: 'free',
-    name: 'FREE',
-    price: '0₪',
-    priceNote: 'לתמיד',
-    features: [
-      '5 בדיקות AI',
-      'עד תמונת ייחוס אחת להורה למשימה',
-      'עד 3 תמונות הוכחה לילד למשימה',
-      'ניהול משימות ותגמולים בסיסי',
-      'חנות פרסים ביתית (תגמולים שווים)',
-    ],
-  },
-  {
-    tier: 'premium',
-    name: 'CHAMP PREMIUM',
-    price: '19₪',
-    priceNote: 'לחודש',
-    features: [
-      'בדיקות AI ללא הגבלה 🤖',
-      'עד 3 תמונות ייחוס להורה למשימה',
-      'עד 5 תמונות הוכחה לילד למשימה',
-      'כל התכונות של המסלול החינמי',
-    ],
-    highlight: true,
-  },
-  {
-    tier: 'academy',
-    name: 'CHAMP ACADEMY',
-    price: '39₪',
-    priceNote: 'לחודש',
-    features: [
-      'כל התכונות של Premium',
-      'העלאת קבצי PDF ודפי עבודה מרובי-עמודים 📄',
-      'ארנק משפחתי — העברות מטבעות בין אחים 💸',
-      'זיכוי וחיוב ישיר של הורה לילד (בונוסים/קנסות)',
-    ],
-  },
-];
 
 /**
  * Full-screen comparative pricing overlay — reached only from a parent's

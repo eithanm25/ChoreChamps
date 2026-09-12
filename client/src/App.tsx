@@ -9,6 +9,7 @@ import ParentOnboardingPage from './pages/ParentOnBoardingPage';
 import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
 import ChildDashboard from './pages/ChildDashboard';
+import LandingPage from './pages/LandingPage';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
 
@@ -50,7 +51,19 @@ export default function App(): React.ReactNode {
   // catch the fresh session created by submitting this very page's own form a
   // moment later, logging it straight back out.
   const pathname = window.location.pathname;
-  const isEntryLinkPath = pathname === '/login' || pathname === '/signup';
+  const searchParams = new URLSearchParams(window.location.search);
+  // שני צורות ההזמנה הקיימות: הורה נוסף (?inviteCode=...) נוחת על / או /signup;
+  // ילד/הורה קיים (?family=...&username=...) נוחת על /login. אם מישהו מגיע
+  // עם אחת מהן ישירות ל-/ (למשל קישור ישן, או שיתוף ידני של הכתובת), חייבים
+  // להתייחס לזה כמו לנחיתה על /login או /signup עצמם — כולל ניקוי סשן קיים,
+  // אחרת ה"עקיפה" למטה לעולם לא תיבדק בכלל (הראוט של / כבר יפנה ישר
+  // לדשבורד הסשן הישן, ידרוס לגמרי את קישור ההזמנה).
+  const hasCoParentInvite = searchParams.has('inviteCode');
+  const hasFamilyInvite = searchParams.has('family') || searchParams.has('username');
+  const isEntryLinkPath =
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    (pathname === '/' && (hasCoParentInvite || hasFamilyInvite));
 
   const [token, setToken] = useState<string | null>(() => {
     if (isEntryLinkPath) {
@@ -155,7 +168,10 @@ export default function App(): React.ReactNode {
     <BrowserRouter>
       <InstallPwaPrompt />
       <Routes>
-        {/* עמוד הבית — הרשמת הורה חדש, או הפניה לדשבורד אם כבר מחוברים */}
+        {/* עמוד הבית — דף הנחיתה השיווקי למי שלא מחובר, או הפניה לדשבורד אם
+            כבר מחוברים. קישורי הזמנה (?inviteCode= / ?family=&username=)
+            שנוחתים כאן במקום על /signup או /login עוקפים את דף הנחיתה
+            לגמרי — ראו isEntryLinkPath למעלה. */}
         <Route
           path="/"
           element={
@@ -169,8 +185,12 @@ export default function App(): React.ReactNode {
               ) : (
                 <Navigate to="/child-dashboard" replace />
               )
-            ) : (
+            ) : hasFamilyInvite ? (
+              <Navigate to={`/login${window.location.search}`} replace />
+            ) : hasCoParentInvite ? (
               <AuthPage onAuth={handleAuth} />
+            ) : (
+              <LandingPage />
             )
           }
         />
