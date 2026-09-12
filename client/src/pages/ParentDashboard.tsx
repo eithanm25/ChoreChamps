@@ -570,7 +570,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                       autoComplete="new-password"
                       value={form.password}
                       onChange={handleInputChange}
-                      placeholder="קבע קוד PIN של 4 ספרות"
+                      placeholder="קבעו סיסמה או PIN — כל שילוב תווים אפשרי"
                       className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-left font-mono"
                       required
                       disabled={formLoading}
@@ -691,9 +691,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                         📎 תמונות ייחוס למשימה (אופציונלי, עד {maxReferencePhotos})
                       </label>
                       <p className="text-slate-500 text-[11px] leading-relaxed mb-1">
-                        {allowReferencePdf
-                          ? 'דף עבודה/מבחן ריק לבדיקת שיעורי בית (תמונה או PDF), או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את מה שהילד/ה ישלחו מולה.'
-                          : 'דף עבודה/מבחן ריק לבדיקת שיעורי בית, או תמונת "תקן זהב" לרמת ניקיון רצויה — ה-AI ישווה את התמונה שהילד/ה ישלחו מולה.'}
+                        הילד/ה יראו כל תמונה או קובץ שתעלו כאן, להמחשה בלבד — ה-AI ישווה את מה שהם ישלחו מולו.
                       </p>
 
                       {referencePhotos.length < maxReferencePhotos && (

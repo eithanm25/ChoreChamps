@@ -106,7 +106,7 @@ export default function SplashScreen({ ready, onFinished }: SplashScreenProps): 
             />
           </div>
           <div className="flex justify-between items-center text-[11px] font-mono">
-            <span className="text-slate-400">מכינים את מרכז הבקרה שלכם...</span>
+            <span className="text-slate-400">טוען את האפליקציה...</span>
             <span className="text-indigo-300 font-bold tabular-nums">{displayedProgress}%</span>
           </div>
         </div>
