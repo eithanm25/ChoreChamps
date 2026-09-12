@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import api from './services/api';
 import AuthPage from './pages/AuthPage';
 import Login from './pages/Login';
 import ParentOnboardingPage from './pages/ParentOnBoardingPage';
 import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
 import ChildDashboard from './pages/ChildDashboard';
+import SplashScreen from './components/SplashScreen';
+import InstallPwaPrompt from './components/InstallPwaPrompt';
 
 // Same env var name the .env file already uses (VITE_CLIENT_ID, not the
 // VITE_GOOGLE_CLIENT_ID a fresh setup might expect) — kept as-is rather than
@@ -64,6 +68,49 @@ export default function App(): React.ReactNode {
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
+  // מסך הפתיחה מוצג תמיד בכניסה טרייה לאתר, ללא קשר למצב ההתחברות. במקביל
+  // לאנימציה הוא מריץ ברקע בדיקת התחברות אמיתית מול השרת — אם הטוקן השמור
+  // כבר לא תקף (משתמש נמחק / טוקן פג), מנקים את הסשן האופטימיסטי לפני
+  // שהראוטינג מציג בכלל דשבורד, כדי שלא יהיה הבזק של תוכן מוגן ואז בעיטה החוצה.
+  const [showSplash, setShowSplash] = useState(true);
+  // אין טוקן לבדוק מלכתחילה -> אין מה לאמת, "הבדיקה" נחשבת גמורה כבר מההתחלה.
+  const [sessionChecked, setSessionChecked] = useState(() => !token);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let cancelled = false;
+
+    api
+      .get('/api/family/me')
+      .catch((err: unknown) => {
+        // רק 401 אומר שהסשן עצמו מת (משתמש נמחק / טוקן פג/מזויף) — כל תגובה
+        // אחרת (400 של הורה שטרם הקים משפחה, שגיאת רשת חולפת) משאירה את
+        // הסשן האופטימיסטי כפי שהוא; ה-interceptor הקיים ב-api.ts כבר מטפל
+        // בסשן שהתברר כלא תקף באופן ריאקטיבי אם וכאשר תתבצע קריאה אמיתית.
+        if (axios.isAxiosError(err) && err.response?.status === 401 && !cancelled) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setToken(null);
+          setUser(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSessionChecked(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // רק בעליית האפליקציה, נגד הטוקן שהיה קיים אז — טוקן חדש שמונפק דרך
+    // handleAuth/handleFamilyCreated כבר ידוע כטרי ואינו זקוק לאימות חוזר.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleAuth = (authToken: string, loggedInUser: SafeUser) => {
     localStorage.setItem('token', authToken);
     localStorage.setItem('user', JSON.stringify(loggedInUser));
@@ -100,7 +147,13 @@ export default function App(): React.ReactNode {
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} locale="iw">
+    {/* הראוטר תמיד מרונדר — כדי שברגע שמסך הפתיחה נעלם לא יהיה שום הבזק של
+        תוכן לא מוכן מתחתיו, היעד הנכון כבר מצויר שם מהרגע הראשון. */}
+    {showSplash && (
+      <SplashScreen ready={sessionChecked} onFinished={() => setShowSplash(false)} />
+    )}
     <BrowserRouter>
+      <InstallPwaPrompt />
       <Routes>
         {/* עמוד הבית — הרשמת הורה חדש, או הפניה לדשבורד אם כבר מחוברים */}
         <Route
