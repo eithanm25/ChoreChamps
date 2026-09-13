@@ -343,7 +343,16 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             >
               נסו בחינם 🚀
             </Link>
-            <p className="text-slate-600 text-[11px] mt-6">© {new Date().getFullYear()} ChoreChamps. כל הזכויות שמורות.</p>
+            <div className="flex items-center gap-4 mt-6 text-[11px]">
+              <Link to="/terms" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
+                תנאי שימוש
+              </Link>
+              <span className="text-slate-700">•</span>
+              <Link to="/privacy" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
+                מדיניות פרטיות
+              </Link>
+            </div>
+            <p className="text-slate-600 text-[11px]">© {new Date().getFullYear()} ChoreChamps. כל הזכויות שמורות.</p>
           </div>
         </footer>
       )}

@@ -10,6 +10,8 @@ import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
 import ChildDashboard from './pages/ChildDashboard';
 import LandingPage from './pages/LandingPage';
+import TermsOfService from './pages/TermsOfService';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
 
@@ -268,6 +270,11 @@ export default function App(): React.ReactNode {
             )
           }
         />
+
+        {/* מסמכים משפטיים — נגישים תמיד, ללא קשר למצב ההתחברות (גם לצוותי
+            בדיקה כמו Paddle וגם למשתמשים מחוברים) */}
+        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

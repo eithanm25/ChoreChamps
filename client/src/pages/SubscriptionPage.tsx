@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { SubscriptionTier } from '../types/family';
 import { openCheckout, priceIdForTier } from '../services/paddle';
 import MessageBanner from '../components/MessageBanner';
@@ -134,6 +135,18 @@ export default function SubscriptionPage({ currentTier, onClose, familyId, email
             );
           })}
         </div>
+
+        <p className="text-center text-slate-500 text-[11px]">
+          בהצטרפות למסלול בתשלום אתם מאשרים שקראתם ומסכימים ל
+          <Link to="/terms" className="text-indigo-400 font-bold hover:text-indigo-300 mx-1">
+            תנאי השימוש
+          </Link>
+          ול
+          <Link to="/privacy" className="text-indigo-400 font-bold hover:text-indigo-300 mx-1">
+            מדיניות הפרטיות
+          </Link>
+          שלנו. התשלום מעובד ומאובטח על ידי Paddle.com.
+        </p>
       </div>
     </div>
   );
