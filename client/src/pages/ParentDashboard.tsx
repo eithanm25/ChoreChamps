@@ -427,6 +427,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
               setSettingsOpen(false);
               setSubscriptionOpen(true);
             }}
+            onAccountDeleted={onLogout}
           />
         )}
 

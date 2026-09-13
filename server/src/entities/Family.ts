@@ -60,6 +60,14 @@ export class Family {
   @Column({ type: 'varchar', length: 6, unique: true, nullable: true })
   familyCode!: string | null;
 
+  /** Paddle's customer id for this household's billing profile — captured by the webhook the first time a subscription is created. Required to open a Customer Portal session (self-service cancel/payment-method update); null until the family's first purchase. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  paddleCustomerId!: string | null;
+
+  /** The family's current active Paddle subscription id. Cleared (null) on cancel/pause so a stale id is never handed to the Customer Portal. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  paddleSubscriptionId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

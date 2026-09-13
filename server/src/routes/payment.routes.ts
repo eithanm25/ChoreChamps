@@ -3,6 +3,7 @@ import { EventName } from '@paddle/paddle-node-sdk';
 import { AppDataSource } from '../data-source';
 import { Family, SubscriptionTier } from '../entities/Family';
 import { getPaddleClient, getWebhookSecret, tierForPriceId } from '../services/paddle';
+import { AuthenticatedRequest, requireAuth, requireParent } from '../middleware/auth';
 
 const router = Router();
 
@@ -61,7 +62,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req: R
       case EventName.SubscriptionActivated:
       case EventName.SubscriptionCreated:
       case EventName.SubscriptionResumed: {
-        await grantTier(event.data.customData, event.data.items[0]?.price?.id);
+        await grantTier(
+          event.data.customData,
+          event.data.items[0]?.price?.id,
+          event.data.customerId,
+          event.data.id,
+        );
         break;
       }
       case EventName.SubscriptionCanceled:
@@ -86,8 +92,19 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req: R
   res.status(200).json({ received: true });
 });
 
-/** Reads familyId out of the checkout's custom_data and upgrades that family to the tier matching the purchased price. */
-async function grantTier(customData: Record<string, unknown> | null, priceId: string | undefined): Promise<void> {
+/**
+ * Reads familyId out of the checkout's custom_data and upgrades that family to
+ * the tier matching the purchased price. Also stores Paddle's customerId/
+ * subscriptionId on the family — the only place these are ever captured —
+ * which is what later lets POST /api/payments/portal-session open a real
+ * Customer Portal session for this family.
+ */
+async function grantTier(
+  customData: Record<string, unknown> | null,
+  priceId: string | undefined,
+  customerId: string,
+  subscriptionId: string,
+): Promise<void> {
   const familyId = typeof customData?.familyId === 'string' ? customData.familyId : null;
   if (!familyId) {
     console.warn('[payments/webhook] subscription event had no familyId in custom_data — skipping');
@@ -100,7 +117,10 @@ async function grantTier(customData: Record<string, unknown> | null, priceId: st
     return;
   }
 
-  await AppDataSource.getRepository(Family).update({ id: familyId }, { tier });
+  await AppDataSource.getRepository(Family).update(
+    { id: familyId },
+    { tier, paddleCustomerId: customerId, paddleSubscriptionId: subscriptionId },
+  );
   console.log(`[payments/webhook] family ${familyId} upgraded to ${tier}`);
 }
 
@@ -112,8 +132,52 @@ async function revokeTier(customData: Record<string, unknown> | null): Promise<v
     return;
   }
 
-  await AppDataSource.getRepository(Family).update({ id: familyId }, { tier: SubscriptionTier.FREE });
+  // paddleCustomerId is left untouched — the customer relationship (and their
+  // right to reopen the Customer Portal to see past invoices) outlives any
+  // one subscription. Only the now-dead subscription id is cleared.
+  await AppDataSource.getRepository(Family).update(
+    { id: familyId },
+    { tier: SubscriptionTier.FREE, paddleSubscriptionId: null },
+  );
   console.log(`[payments/webhook] family ${familyId} reverted to free`);
 }
+
+/**
+ * POST /api/payments/portal-session
+ * Parent-only. Opens a real Paddle Customer Portal session for the parent's
+ * family so they can self-service cancel, update their card, or view past
+ * invoices — without any of that billing UI living in this app itself.
+ * Requires the family to have completed at least one purchase (paddleCustomerId
+ * is only ever set by the webhook above, at that point).
+ */
+router.post(
+  '/portal-session',
+  requireAuth,
+  requireParent,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const paddle = getPaddleClient();
+    if (!paddle) {
+      res.status(503).json({ error: 'התשלומים עדיין לא הוגדרו במערכת' });
+      return;
+    }
+
+    const family = req.user!.family;
+    if (!family?.paddleCustomerId) {
+      res.status(400).json({ error: 'עדיין אין מנוי פעיל לניהול — רכשו מסלול כדי לפתוח את פורטל הניהול' });
+      return;
+    }
+
+    try {
+      const session = await paddle.customerPortalSessions.create(
+        family.paddleCustomerId,
+        family.paddleSubscriptionId ? [family.paddleSubscriptionId] : [],
+      );
+      res.json({ url: session.urls.general.overview });
+    } catch (err) {
+      console.error('[payments/portal-session] failed to create a portal session:', err);
+      res.status(502).json({ error: 'שגיאה בפתיחת פורטל הניהול. נסו שוב בעוד רגע.' });
+    }
+  },
+);
 
 export default router;

@@ -413,6 +413,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
             familyCode={familyInfo?.familyCode ?? null}
             onClose={() => setSettingsOpen(false)}
             onAvatarChange={(avatarUrl) => onUserUpdate?.({ avatarUrl })}
+            onAccountDeleted={onLogout}
           />
         )}
 

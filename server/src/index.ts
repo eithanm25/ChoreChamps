@@ -9,6 +9,7 @@ import taskRoutes from './routes/task.routes';
 import rewardRoutes from './routes/reward.routes';
 import walletRoutes from './routes/wallet.routes';
 import paymentRoutes from './routes/payment.routes';
+import userRoutes from './routes/user.routes';
 import { authLimiter } from './middleware/rateLimit';
 
 dotenv.config();
@@ -66,6 +67,7 @@ app.use('/api/family', familyRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/users', userRoutes);
 
 // Unknown route → JSON 404 (not Express's default HTML page).
 app.use((_req, res) => {

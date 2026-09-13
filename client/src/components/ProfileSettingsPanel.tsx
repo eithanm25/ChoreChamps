@@ -4,19 +4,22 @@ import axios from 'axios';
 import api from '../services/api';
 import AvatarBadge from './AvatarBadge';
 import { AVAILABLE_AVATARS } from '../data/avatars';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { SafeUser } from '../App';
 import type { SubscriptionTier } from '../types/family';
 
 interface ProfileSettingsPanelProps {
   user: SafeUser;
   familyCode: string | null;
-  /** Parent only — omit for a child, which hides the upgrade CTA entirely regardless of anything else. */
+  /** Parent only — omit for a child, which hides the upgrade CTA and subscription management entirely regardless of anything else. */
   familyTier?: SubscriptionTier;
   onClose: () => void;
   /** Called once the avatar is already saved server-side — just patch local/App state. */
   onAvatarChange: (avatarUrl: string) => void;
   /** Parent only. */
   onOpenSubscription?: () => void;
+  /** Fires after the account is permanently deleted server-side — callers pass their own onLogout to clear localStorage and drop the user back on the routing guard's default ("/"). */
+  onAccountDeleted: () => void;
 }
 
 /**
@@ -34,6 +37,7 @@ export default function ProfileSettingsPanel({
   onClose,
   onAvatarChange,
   onOpenSubscription,
+  onAccountDeleted,
 }: ProfileSettingsPanelProps): React.ReactNode {
   const [savingAvatar, setSavingAvatar] = useState<string | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -41,10 +45,58 @@ export default function ProfileSettingsPanel({
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   const isChild = user.role === 'child';
   const credentialLabel = isChild ? 'PIN' : 'סיסמה';
   const canChangeCredential = user.authProvider !== 'google';
+
+  const handleOpenBillingPortal = async () => {
+    if (portalLoading) return;
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const { data } = await api.post<{ url: string }>('/api/payments/portal-session');
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (err: unknown) {
+      let text = 'שגיאה בפתיחת פורטל הניהול';
+      if (axios.isAxiosError(err)) {
+        text = err.response?.data?.error || err.message;
+      }
+      setPortalError(text);
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    requestConfirm(
+      isChild
+        ? 'פעולה זו תמחק את חשבונך לצמיתות ולא ניתן לבטל אותה. להמשיך?'
+        : 'פעולה זו תמחק את חשבונך לצמיתות. אם אתה ההורה האחרון במשפחה, כל נתוני המשפחה — משימות, פרופילי ילדים, ארנק ופרסים — יימחקו לצמיתות יחד איתו ולא ניתן לשחזר אותם. להמשיך?',
+      async () => {
+        setDeleteLoading(true);
+        setDeleteError(null);
+        try {
+          await api.delete('/api/users/purge-account');
+          onAccountDeleted();
+        } catch (err: unknown) {
+          let text = 'שגיאה במחיקת החשבון';
+          if (axios.isAxiosError(err)) {
+            text = err.response?.data?.error || err.message;
+          }
+          setDeleteError(text);
+        } finally {
+          setDeleteLoading(false);
+        }
+      },
+      { confirmLabel: 'כן, מחק/י לצמיתות', danger: true },
+    );
+  };
 
   const handleAvatarPick = async (emoji: string) => {
     if (savingAvatar || emoji === user.avatarUrl) return;
@@ -227,7 +279,37 @@ export default function ProfileSettingsPanel({
             👑 שדרג מסלול משפחתי
           </button>
         )}
+
+        {/* 💳 ניהול מנוי ותשלומים — הורים עם מסלול בתשלום בלבד, דרך פורטל הלקוחות האמיתי של Paddle. */}
+        {!isChild && familyTier && familyTier !== 'free' && (
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleOpenBillingPortal}
+              disabled={portalLoading}
+              className="w-full py-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-black shadow-lg hover:from-indigo-600 hover:to-violet-600 transition-all disabled:opacity-50"
+            >
+              {portalLoading ? 'פותח פורטל ניהול...' : '💳 ניהול מנוי ותשלומים'}
+            </button>
+            {portalError && <p className="text-rose-400 text-xs font-bold text-center">{portalError}</p>}
+          </div>
+        )}
+
+        {/* ⚠️ אזור סכנה — מחיקת חשבון לצמיתות. זמין לכל תפקיד, כי המחיקה היא תמיד על החשבון המחובר עצמו. */}
+        <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
+          <span className="text-rose-400 text-xs font-black">⚠️ אזור סכנה</span>
+          <button
+            type="button"
+            onClick={handleDeleteAccount}
+            disabled={deleteLoading}
+            className="w-full py-2.5 rounded-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all disabled:opacity-50"
+          >
+            {deleteLoading ? 'מוחק חשבון...' : '🗑️ מחיקת חשבון לצמיתות'}
+          </button>
+          {deleteError && <p className="text-rose-400 text-xs font-bold text-center">{deleteError}</p>}
+        </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
