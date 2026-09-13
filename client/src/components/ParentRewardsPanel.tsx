@@ -6,7 +6,15 @@ import { usePolling } from '../hooks/usePolling';
 import RewardCard from './RewardCard';
 import PendingFulfillmentCard from './PendingFulfillmentCard';
 import MessageBanner from './MessageBanner';
-import { searchCatalogItems, type MarketplaceCatalogItem } from '../data/marketplaceCatalog';
+import { searchCatalogItems, type MarketplaceCatalogItem, type StoreName } from '../data/marketplaceCatalog';
+
+/** Hebrew display label per store, for the "רכוש ב-X" comparison buttons. */
+const STORE_LABELS: Record<StoreName, string> = {
+  ebay: 'איביי',
+  amazon: 'אמזון',
+  aliexpress: 'עלי אקספרס',
+  custom: 'חנות המותג',
+};
 import type { RewardDto, RewardCategory, RewardType } from '../types/reward';
 
 interface FamilyChild {
@@ -99,8 +107,15 @@ export default function ParentRewardsPanel(): React.ReactNode {
       title: item.title,
       description: item.description,
       imageUrl: item.imageUrl,
-      affiliateUrl: item.affiliateUrl,
+      // ברירת מחדל: החנות הראשונה ברשימה. ההורה יכול לבחור חנות אחרת
+      // מתוך כפתורי ההשוואה שמופיעים בהמשך (ראו handleChoosePurchaseLink).
+      affiliateUrl: item.purchaseLinks[0]?.url ?? '',
     }));
+  };
+
+  /** ההורה משווה מחירים בין החנויות הזמינות למוצר ובוחר את הקישור שישמר בפועל עם התגמול. */
+  const handleChoosePurchaseLink = (url: string) => {
+    setForm((prev) => ({ ...prev, affiliateUrl: url }));
   };
 
   const handleClearCatalogSelection = () => {
@@ -253,24 +268,48 @@ export default function ParentRewardsPanel(): React.ReactNode {
                 <label className="text-slate-200 text-sm font-medium">בחירת מוצר מהקטלוג</label>
 
                 {selectedCatalogItem ? (
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800 ring-1 ring-indigo-500/40">
-                    <img
-                      src={selectedCatalogItem.imageUrl}
-                      alt={selectedCatalogItem.title}
-                      className="w-12 h-12 rounded-lg object-cover ring-1 ring-slate-700"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-bold truncate">{selectedCatalogItem.title}</p>
-                      <p className="text-slate-400 text-[11px] truncate">{selectedCatalogItem.description}</p>
+                  <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-slate-800 ring-1 ring-indigo-500/40">
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={selectedCatalogItem.imageUrl}
+                        alt={selectedCatalogItem.title}
+                        className="w-12 h-12 rounded-lg object-cover ring-1 ring-slate-700"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-bold truncate">{selectedCatalogItem.title}</p>
+                        <p className="text-slate-400 text-[11px] truncate">{selectedCatalogItem.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearCatalogSelection}
+                        disabled={formLoading}
+                        className="shrink-0 px-3 py-1.5 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-[11px] font-bold transition-all"
+                      >
+                        🔄 שנה מוצר
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleClearCatalogSelection}
-                      disabled={formLoading}
-                      className="shrink-0 px-3 py-1.5 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-[11px] font-bold transition-all"
-                    >
-                      🔄 שנה מוצר
-                    </button>
+
+                    {/* השוואת מחירים בין החנויות הזמינות למוצר — לחיצה בוחרת את
+                        הקישור שיישמר בפועל עם התגמול שנוצר */}
+                    {selectedCatalogItem.purchaseLinks.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pr-1">
+                        {selectedCatalogItem.purchaseLinks.map((link) => (
+                          <button
+                            key={`${link.storeName}-${link.url}`}
+                            type="button"
+                            onClick={() => handleChoosePurchaseLink(link.url)}
+                            disabled={formLoading}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+                              form.affiliateUrl === link.url
+                                ? 'bg-indigo-500 text-white'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            }`}
+                          >
+                            רכוש ב{STORE_LABELS[link.storeName]} ב-{link.priceLabel}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
