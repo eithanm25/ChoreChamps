@@ -72,8 +72,8 @@ export class Task {
    * Optional reference photo(s)/PDF the parent uploads when creating the task
    * — a blank worksheet/test to grade against, or a "golden standard" example
    * of a finished chore. How many are allowed is tier-gated (see
-   * subscriptionLimits.ts's MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 3,
-   * ACADEMY: higher + PDFs). Stored the same way as Submission.photoUrls: bare
+   * subscriptionLimits.ts's MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 10
+   * + PDFs). Stored the same way as Submission.photoUrls: bare
    * R2 object keys, comma-separated. Deleted from storage once the task is
    * approved (see deleteObjects in task.routes.ts) — the learning/chore cycle is
    * done by then, so there's nothing left to compare against.

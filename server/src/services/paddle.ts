@@ -37,18 +37,17 @@ export function getWebhookSecret(): string | null {
 
 /**
  * Maps a Paddle Price ID (from a subscription/transaction line item) back to
- * one of our own paid tiers. Reads the mapping from env so the real price IDs
- * — created on the client's own Paddle account — are a pure config change,
- * never a code change. An unrecognized price ID (including while these are
- * still unset placeholders) returns null and the caller should no-op rather
- * than guess.
+ * our one paid tier. There's a single PREMIUM tier sold at two billing
+ * frequencies (PADDLE_PRICE_ID_MONTHLY / PADDLE_PRICE_ID_ANNUAL) — either one
+ * grants the same tier, just at a different price/interval. Reads the
+ * mapping from env so the real price IDs — created on the client's own
+ * Paddle account — are a pure config change, never a code change. An
+ * unrecognized price ID (including while these are still unset placeholders)
+ * returns null and the caller should no-op rather than guess.
  */
-export function tierForPriceId(priceId: string): SubscriptionTier.PREMIUM | SubscriptionTier.ACADEMY | null {
-  if (priceId && priceId === process.env.PADDLE_PRICE_ID_PREMIUM) {
+export function tierForPriceId(priceId: string): SubscriptionTier.PREMIUM | null {
+  if (priceId && (priceId === process.env.PADDLE_PRICE_ID_MONTHLY || priceId === process.env.PADDLE_PRICE_ID_ANNUAL)) {
     return SubscriptionTier.PREMIUM;
-  }
-  if (priceId && priceId === process.env.PADDLE_PRICE_ID_ACADEMY) {
-    return SubscriptionTier.ACADEMY;
   }
   return null;
 }

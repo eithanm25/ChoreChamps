@@ -114,7 +114,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       parentInviteCode: user.role === UserRole.PARENT ? family.parentInviteCode : undefined,
       tier: family.tier,
       aiUsageCount: family.aiUsageCount,
-      // null means "no cap" (PREMIUM/ACADEMY) — the frontend's polite quota
+      // null means "no cap" (PREMIUM) — the frontend's polite quota
       // message only renders when this is a number. On FREE this is the
       // one-time lifetime allowance left, not a monthly figure.
       aiUsagesRemaining:

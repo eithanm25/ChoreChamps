@@ -19,7 +19,7 @@ export enum WalletTransactionType {
 }
 
 /**
- * Audit ledger for every ACADEMY-tier wallet movement — sibling-to-sibling
+ * Audit ledger for every wallet movement, on every tier — sibling-to-sibling
  * transfers and manual parent adjustments (see wallet.routes.ts). Every row
  * is written inside the same DB transaction as the ChildProfile.balance
  * mutation it records, so the ledger can never drift from actual balances.

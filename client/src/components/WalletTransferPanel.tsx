@@ -51,7 +51,7 @@ function ContactCircle({
 }
 
 /**
- * "Bit"-style peer-to-peer wallet transfer wizard — Academy tier only, child
+ * "Bit"-style peer-to-peer wallet transfer wizard — available on every tier, child
  * side. Step 1: pick a sibling. Step 2: amount + mandatory reason. Step 3:
  * re-enter password as a security gate (POST /api/auth/verify-password)
  * before the real transfer (POST /api/wallet/transfer-sibling) fires.

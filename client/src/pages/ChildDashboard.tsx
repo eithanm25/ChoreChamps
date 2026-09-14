@@ -13,7 +13,7 @@ import WalletTransferPanel from '../components/WalletTransferPanel';
 import AvatarBadge from '../components/AvatarBadge';
 import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import type { FamilyInfo } from '../types/family';
-import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads, tierAllowsWallet } from '../types/family';
+import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
 import LandingPage from './LandingPage';
 
 interface ChildDashboardProps {
@@ -87,8 +87,8 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
   // סטייט לצפייה באחים
   const [selectedSibling, setSelectedSibling] = useState<FamilyMember | null>(null);
 
-  // מסלול המנוי של המשפחה — קובע אם חובה לצלם עם המצלמה בלבד (Free/Premium) או שמותר גם
-  // להעלות קבצים/PDF קיימים (Academy), וכמה תמונות מותר לצרף להגשה
+  // מסלול המנוי של המשפחה — קובע אם חובה לצלם עם המצלמה בלבד (Free) או שמותר גם
+  // להעלות קבצים/PDF קיימים (Premium), וכמה תמונות מותר לצרף להגשה
   const [familyInfo, setFamilyInfo] = useState<FamilyInfo | null>(null);
   const familyTier = familyInfo?.tier ?? 'free';
   const maxExecutionPhotos = MAX_EXECUTION_PHOTOS_BY_TIER[familyTier];
@@ -431,9 +431,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
           <button onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎯 משימות וחטיפה</button>
           <button onClick={() => setActiveMainTab('rewards-store')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'rewards-store' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎁 חנות הפרסים שלי</button>
           <button onClick={() => setActiveMainTab('family-leaderboard')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>👥 חברי המשפחה</button>
-          {tierAllowsWallet(familyTier) && (
-            <button onClick={() => setActiveMainTab('wallet')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'wallet' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>💸 ארנק</button>
-          )}
+          <button onClick={() => setActiveMainTab('wallet')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'wallet' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>💸 ארנק</button>
         </nav>
 
         {/* === טאב 1: לוח משימות פתוחות + המשימה הפעילה שלי === */}
@@ -492,7 +490,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                             url={url}
                             alt="תמונת ייחוס למשימה"
                             className="w-28 h-28 rounded-lg border border-indigo-500/40 shadow-md"
-                            allowDownload={familyTier === 'academy'}
+                            allowDownload={familyTier === 'premium'}
                           />
                         ))}
                       </div>
@@ -556,7 +554,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                                 url={url}
                                 alt="ההוכחה ששלחת"
                                 className="w-16 h-16 rounded-lg border border-emerald-500/30"
-                                allowDownload={familyTier === 'academy'}
+                                allowDownload={familyTier === 'premium'}
                               />
                             ))}
                           </div>
@@ -609,7 +607,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                                 url={url}
                                 alt="תמונת ייחוס למשימה"
                                 className="w-28 h-28 rounded-lg border border-rose-500/40 shadow-md"
-                                allowDownload={familyTier === 'academy'}
+                                allowDownload={familyTier === 'premium'}
                               />
                             ))}
                           </div>
@@ -716,8 +714,8 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
           </div>
         )}
 
-        {/* === טאב 4: ארנק — העברת מטבעות לאחים, זמין רק במסלול האקדמיה === */}
-        {activeMainTab === 'wallet' && tierAllowsWallet(familyTier) && (
+        {/* === טאב 4: ארנק — העברת מטבעות לאחים, זמין לכל המשפחות === */}
+        {activeMainTab === 'wallet' && (
           <WalletTransferPanel
             currentUserId={user.id}
             children={members

@@ -1,5 +1,5 @@
 import { initializePaddle, type Paddle } from '@paddle/paddle-js';
-import type { SubscriptionTier } from '../types/family';
+import type { BillingInterval } from '../data/subscriptionPlans';
 
 /**
  * Paddle Billing (v3) checkout overlay. Ships with placeholder/empty env vars
@@ -33,15 +33,12 @@ function getPaddle(): Promise<Paddle | null> {
   return paddlePromise;
 }
 
-/** The Paddle Price ID configured for a given paid tier, or null if unset (still a placeholder) or the tier isn't purchasable. */
-export function priceIdForTier(tier: SubscriptionTier): string | null {
-  if (tier === 'premium') {
-    return import.meta.env.VITE_PADDLE_PRICE_ID_PREMIUM || null;
+/** The Paddle Price ID for the one paid tier's monthly or annual billing frequency, or null if unset (still a placeholder). */
+export function priceIdForBilling(interval: BillingInterval): string | null {
+  if (interval === 'month') {
+    return import.meta.env.VITE_PADDLE_PRICE_ID_MONTHLY || null;
   }
-  if (tier === 'academy') {
-    return import.meta.env.VITE_PADDLE_PRICE_ID_ACADEMY || null;
-  }
-  return null;
+  return import.meta.env.VITE_PADDLE_PRICE_ID_ANNUAL || null;
 }
 
 export interface OpenCheckoutParams {

@@ -11,8 +11,9 @@ const CONTACT_EMAIL = 'support@chorechampsapp.com';
  *    exists in the backend).
  *  - Added that proof photos are deleted on approval/rejection — true, and
  *    a genuinely reassuring detail (see server/src/services/storage.ts).
- *  - Account/data deletion described as a support-request flow, not a
- *    "Settings" self-service toggle — no such feature exists yet.
+ *  - Account/data deletion described as self-service, via the profile
+ *    settings "Danger Zone" (DELETE /api/users/purge-account) — a real,
+ *    shipped feature, not a support-request-only flow any more.
  *  - Replaced the "Cookies" section entirely: this app has zero cookie
  *    usage. The session token lives in the browser's localStorage, read via
  *    an Authorization header — not a cookie. Claiming otherwise in a privacy
@@ -47,7 +48,7 @@ const SECTIONS_HE: LegalSection[] = [
   {
     heading: 'שמירת נתונים ותמונות',
     body: [
-      'אנו שומרים את הפרופילים המשפחתיים והגדרות המשימות שלך כל עוד החשבון שלך פעיל. תמונות האימות שהועלו מאוחסנות בצורה מאובטחת על תשתית Cloudflare R2, ונמחקות באופן שוטף עם אישור/דחיית משימה, עם חוקי מחיקה אוטומטיים (Object Lifecycle) כרשת ביטחון נוספת. באפשרותך לבקש מחיקה מלאה ולצמיתות של החשבון וכל הנתונים הקשורים אליו בכל עת, בפנייה לתמיכה בכתובת ' +
+      'אנו שומרים את הפרופילים המשפחתיים והגדרות המשימות שלך כל עוד החשבון שלך פעיל. תמונות האימות שהועלו מאוחסנות בצורה מאובטחת על תשתית Cloudflare R2, ונמחקות באופן שוטף עם אישור/דחיית משימה, עם חוקי מחיקה אוטומטיים (Object Lifecycle) כרשת ביטחון נוספת. באפשרותך למחוק בעצמך, לצמיתות ובכל עת, את החשבון וכל הנתונים הקשורים אליו — דרך "אזור סכנה" בהגדרות הפרופיל בתוך האפליקציה; לחלופין ניתן לפנות לתמיכה בכתובת ' +
         CONTACT_EMAIL +
         '.',
     ],
@@ -88,7 +89,7 @@ const SECTIONS_EN: LegalSection[] = [
   {
     heading: 'Data and Image Retention',
     body: [
-      'We retain your family profiles and task configurations for as long as your account is active. Uploaded verification photos are stored securely on Cloudflare R2 infrastructure and are routinely deleted upon task approval/rejection, with automatic deletion rules (Object Lifecycle) as an additional safeguard. You may request full, permanent deletion of your account and all associated data at any time by contacting support at ' +
+      'We retain your family profiles and task configurations for as long as your account is active. Uploaded verification photos are stored securely on Cloudflare R2 infrastructure and are routinely deleted upon task approval/rejection, with automatic deletion rules (Object Lifecycle) as an additional safeguard. You may delete your account and all associated data yourself, permanently, at any time, via the "Danger Zone" in profile settings within the app; alternatively you may contact support at ' +
         CONTACT_EMAIL +
         '.',
     ],

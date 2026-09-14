@@ -59,7 +59,7 @@ function ChildCircle({
 }
 
 /**
- * Parent's direct wallet control — Academy tier only. Unlike
+ * Parent's direct wallet control — available on every tier. Unlike
  * WalletTransferPanel (a sibling-to-sibling transfer), this never debits a
  * "parent balance" (parents have no ChildProfile/wallet at all): 'give'
  * credits the chosen child from nowhere in particular (an allowance top-up or

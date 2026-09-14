@@ -4,7 +4,7 @@ interface MediaLightboxProps {
   /** Already-resolved, absolute URL (see resolvePhotoUrl). */
   url: string;
   isPdf: boolean;
-  /** Academy tier only — everywhere else, files are deleted on approval with no way to get them back. */
+  /** Premium tier only — everywhere else, files are deleted on approval with no way to get them back. */
   allowDownload?: boolean;
   downloadName?: string;
   onClose: () => void;

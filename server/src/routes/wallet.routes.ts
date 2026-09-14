@@ -1,26 +1,16 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { AuthenticatedRequest, requireAuth, requireParent } from '../middleware/auth';
 import { ChildProfile } from '../entities/ChildProfile';
 import { User, UserRole } from '../entities/User';
-import { SubscriptionTier } from '../entities/Family';
 import { WalletTransaction, WalletTransactionType } from '../entities/WalletTransaction';
 import { toCents, fromCents } from '../utils/money';
 
 const router = Router();
 
-/** Blocks every route below unless the requester's household is on the ACADEMY tier. */
-function requireAcademyTier(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  if (req.user?.family?.tier !== SubscriptionTier.ACADEMY) {
-    res.status(403).json({
-      error: 'העברות ותיקוני ארנק זמינות רק במסלול האקדמיה 🎓 שדרגו כדי לפתוח את הפיצ׳ר',
-    });
-    return;
-  }
-  next();
-}
-
-router.use(requireAuth, requireAcademyTier);
+// The wallet ledger is a base-engagement feature available on every tier,
+// FREE included — no tier gate here (there used to be one, ACADEMY-only).
+router.use(requireAuth);
 
 type WalletOutcome<T> = ({ ok: true } & T) | { ok: false; status: number; error: string };
 

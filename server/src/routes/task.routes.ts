@@ -45,7 +45,7 @@ const storage = multer.memoryStorage();
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 /**
- * Compress an uploaded image and store it in R2; PDFs (ACADEMY reference
+ * Compress an uploaded image and store it in R2; PDFs (PREMIUM reference
  * uploads) are stored as-is since they're never image-compressed. Returns the
  * object key to persist on the task/submission.
  */
@@ -97,14 +97,12 @@ function buildExecutionUpload(tier: SubscriptionTier): ReturnType<typeof multer>
 const executionUploadByTier: Record<SubscriptionTier, ReturnType<typeof multer>> = {
   [SubscriptionTier.FREE]: buildExecutionUpload(SubscriptionTier.FREE),
   [SubscriptionTier.PREMIUM]: buildExecutionUpload(SubscriptionTier.PREMIUM),
-  [SubscriptionTier.ACADEMY]: buildExecutionUpload(SubscriptionTier.ACADEMY),
 };
 
 /**
  * Reference photo upload (task creation) — how many files and which types are
  * accepted both vary by tier (see subscriptionLimits.ts's
- * MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 3, ACADEMY: higher +
- * PDFs).
+ * MAX_REFERENCE_PHOTOS_BY_TIER — FREE: 1, PREMIUM: 10 + PDFs).
  */
 function buildReferenceUpload(tier: SubscriptionTier): ReturnType<typeof multer> {
   const allowPdf = tierAllowsPdfUploads(tier);
@@ -126,7 +124,6 @@ function buildReferenceUpload(tier: SubscriptionTier): ReturnType<typeof multer>
 const referenceUploadByTier: Record<SubscriptionTier, ReturnType<typeof multer>> = {
   [SubscriptionTier.FREE]: buildReferenceUpload(SubscriptionTier.FREE),
   [SubscriptionTier.PREMIUM]: buildReferenceUpload(SubscriptionTier.PREMIUM),
-  [SubscriptionTier.ACADEMY]: buildReferenceUpload(SubscriptionTier.ACADEMY),
 };
 
 function multerErrorMessage(err: unknown): string {
@@ -681,7 +678,7 @@ router.post(
           // missing API key (reviewChorePhoto returning null) shouldn't cost the
           // family one of their free checks. Tracked for every tier, even
           // though only FREE is capacity-limited above, so usage stays visible
-          // for Premium/Academy households too.
+          // for PREMIUM households too.
           if (aiSummary !== null) {
             await AppDataSource.getRepository(Family).increment({ id: task.family.id }, 'aiUsageCount', 1);
           }

@@ -48,7 +48,7 @@ interface FamilyMember {
 interface ParentTasksListProps {
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
-  /** Gates the lightbox's download button — files are wiped on approval, so only Academy tier can save a copy first. */
+  /** Gates the lightbox's download button — files are wiped on approval, so only Premium tier can save a copy first. */
   familyTier?: SubscriptionTier;
 }
 
@@ -67,7 +67,7 @@ function getAssigneeLabel(task: Task): string {
 }
 
 export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentTasksListProps): React.ReactNode {
-  const allowDownload = familyTier === 'academy';
+  const allowDownload = familyTier === 'premium';
   const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TaskTab>('unassigned');

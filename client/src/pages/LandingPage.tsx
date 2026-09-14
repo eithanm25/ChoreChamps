@@ -157,7 +157,6 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
   const isModal = mode === 'modal';
   const freePlan = PLANS.find((plan) => plan.tier === 'free');
   const premiumPlan = PLANS.find((plan) => plan.tier === 'premium');
-  const academyPlan = PLANS.find((plan) => plan.tier === 'academy');
 
   return (
     <div
@@ -290,11 +289,11 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
         </section>
 
         {/* השוואת מסלולים */}
-        {freePlan && premiumPlan && academyPlan && (
+        {freePlan && premiumPlan && (
           <section>
             <SectionHeading eyebrow="💎 המסלולים שלנו" title="בחרו את המסלול שמתאים למשפחה שלכם" />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-              {[freePlan, premiumPlan, academyPlan].map((plan) => (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              {[freePlan, premiumPlan].map((plan) => (
                 <div
                   key={plan.tier}
                   className={`relative rounded-3xl p-6 flex flex-col gap-4 border transition-all ${

@@ -8,11 +8,16 @@ import {
 import { User } from './User';
 import { Task } from './Task';
 
-/** Freemium plan for a household. Gates AI review quota, upload constraints, and wallet features. */
+/**
+ * Freemium plan for a household. Gates AI review quota and upload
+ * constraints — the wallet ledger is available on every tier, FREE included.
+ * A single paid PREMIUM tier (billed monthly or annually, see paddle.ts) —
+ * there used to be a second, pricier ACADEMY tier; it was folded into
+ * PREMIUM when the product moved to one unified paid plan.
+ */
 export enum SubscriptionTier {
   FREE = 'free',
   PREMIUM = 'premium',
-  ACADEMY = 'academy',
 }
 
 /**
@@ -29,7 +34,7 @@ export class Family {
   @Column({ type: 'varchar', length: 255 })
   familyName!: string;
 
-  /** Freemium plan. FREE by default; PREMIUM/ACADEMY unlock AI/upload limits and (ACADEMY only) the wallet ledger. */
+  /** Freemium plan. FREE by default; PREMIUM unlocks unlimited AI review and higher upload limits. The wallet ledger is unlocked on every tier. */
   @Column({ type: 'enum', enum: SubscriptionTier, default: SubscriptionTier.FREE })
   tier!: SubscriptionTier;
 

@@ -9,7 +9,7 @@ interface MediaThumbnailProps {
   alt: string;
   /** Sizing/border/rounding classes for the thumbnail itself, e.g. "w-20 h-20 rounded-lg border border-slate-700". */
   className?: string;
-  /** Academy tier only — see MediaLightbox. */
+  /** Premium tier only — see MediaLightbox. */
   allowDownload?: boolean;
 }
 

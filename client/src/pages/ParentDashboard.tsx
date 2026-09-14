@@ -9,7 +9,7 @@ import MessageBanner from '../components/MessageBanner';
 import { usePolling } from '../hooks/usePolling';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { FamilyInfo } from '../types/family';
-import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads, tierAllowsWallet } from '../types/family';
+import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
 import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
 import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
 import AvatarBadge from '../components/AvatarBadge';
@@ -468,17 +468,15 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
           >
             🎁 חנות הפרסים
           </button>
-          {tierAllowsWallet(familyTier) && (
-            <button
-              type="button"
-              onClick={() => setMainTab('wallet')}
-              className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
-                mainTab === 'wallet' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              💸 העברת כספים
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setMainTab('wallet')}
+            className={`w-full sm:w-auto sm:flex-1 py-2.5 sm:py-2 px-3 sm:px-2 rounded-full text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${
+              mainTab === 'wallet' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            💸 העברת כספים
+          </button>
         </nav>
 
         {/* === טאב 1: ניהול חברי המשפחה והוספת פרופילים === */}
@@ -837,8 +835,8 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
         {/* === טאב 3: חנות הפרסים — פרסום תגמולים וניהול הקטלוג === */}
         {mainTab === 'rewards' && <ParentRewardsPanel />}
 
-        {/* === טאב 4: העברת כספים — זיכוי/חיוב ישיר של ילד, זמין רק במסלול האקדמיה === */}
-        {mainTab === 'wallet' && tierAllowsWallet(familyTier) && (
+        {/* === טאב 4: העברת כספים — זיכוי/חיוב ישיר של ילד, זמין לכל המשפחות === */}
+        {mainTab === 'wallet' && (
           <ParentCoinAdjustPanel
             authProvider={user.authProvider}
             children={members

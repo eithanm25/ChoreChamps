@@ -6,16 +6,17 @@ const CONTACT_EMAIL = 'support@chorechampsapp.com';
 /**
  * Corrections made against what the app actually does (both languages), so
  * this document never promises something a real user can't actually get:
- *  - Plan names/prices matched to data/subscriptionPlans.ts: Premium is
- *    the ₪19/mo plan and Champ Academy is the ₪39/mo plan — the source
- *    text had these two swapped/renamed.
+ *  - Single-tier pricing matched to data/subscriptionPlans.ts: one paid
+ *    Premium plan, billed either ₪29.90/month or ₪280/year (there used to
+ *    be a second, pricier Champ Academy plan — it was folded into Premium).
  *  - "Award stars" -> "award ChoreCoins": the app's currency is ChoreCoins
  *    everywhere in the UI; it never says "stars".
- *  - Cancellation and account deletion described as support-request flows
- *    (contact support@...), not a "Settings" self-service toggle — no such
- *    self-service cancel-subscription or delete-account feature exists in
- *    the app today. Promising one in a legal document would be a real
- *    liability the moment a user tried to use it.
+ *  - Cancellation is described as self-service via the real Paddle Customer
+ *    Portal (POST /api/payments/portal-session, reachable from profile
+ *    settings), and account deletion as self-service via the profile
+ *    settings danger zone (DELETE /api/users/purge-account) — both are real,
+ *    shipped features, not aspirational. Support email is kept only as a
+ *    fallback for anyone who can't use either.
  */
 
 const SECTIONS_HE: LegalSection[] = [
@@ -32,17 +33,17 @@ const SECTIONS_HE: LegalSection[] = [
     ],
   },
   {
-    heading: 'מסלולים חינמיים ובתשלום',
+    heading: 'מסלול חינמי ומסלול פרימיום',
     body: [
-      'ChoreChamps מציעה מסלול חינמי (FREE) הכולל מספר מוגבל של בדיקות איכות מבוססות בינה מלאכותית ומכסת תמונות הוכחה/ייחוס למשימה. שני מסלולי מנוי בתשלום פותחים יכולות מורחבות: מסלול Premium ב-19 ₪ לחודש (בדיקות AI ללא הגבלה, יותר תמונות ייחוס והוכחה למשימה), ומסלול Champ Academy ב-39 ₪ לחודש (כל יתרונות Premium, בתוספת העלאת קבצי PDF וארנק משפחתי משותף בין אחים). התמחור המלא והעדכני מוצג תמיד בממשק האפליקציה.',
+      'ChoreChamps מציעה מסלול חינמי (FREE) הכולל מספר מוגבל של בדיקות איכות מבוססות בינה מלאכותית, מכסת תמונות הוכחה/ייחוס למשימה, ארנק ChoreCoins מלא (העברות בין הורה לילד/ה ובין אחים) וכולל פרסומות. מסלול מנוי אחד בתשלום — Champ Premium — פותח חוויה נקייה לחלוטין מפרסומות, בדיקות AI ללא הגבלה, יותר תמונות ייחוס והוכחה למשימה, העלאת קבצי PDF ונפח אחסון מורחב לתמונות ייחוס. Premium נמכר בשתי תדירויות חיוב לבחירתך: 29.90 ₪ לחודש, או 280 ₪ לשנה (המסלול השנתי חוסך כ-22% בסך הכל, כ-6.6 ₪ פחות בכל חודש בהשוואה לתשלום החודשי). התמחור המלא והעדכני מוצג תמיד בממשק האפליקציה.',
     ],
   },
   {
     heading: 'תשלומים וחיובים',
     body: [
-      'התשלומים מעובדים על ידי Paddle.com, המשמש כ-Merchant of Record הרשמי של כל עסקה. המנויים מתחדשים אוטומטית בסוף כל תקופת חיוב. ניתן לבקש ביטול המנוי בכל עת בפנייה לתמיכה בכתובת ' +
+      'התשלומים מעובדים על ידי Paddle.com, המשמש כ-Merchant of Record הרשמי של כל עסקה. המנויים מתחדשים אוטומטית בסוף כל תקופת החיוב שנבחרה (חודשית או שנתית). ניתן לבטל את המנוי באופן עצמאי בכל עת דרך פורטל ניהול המנוי של Paddle, הנגיש מהגדרות הפרופיל בתוך האפליקציה; לחלופין ניתן לפנות לתמיכה בכתובת ' +
         CONTACT_EMAIL +
-        '; הגישה לפיצ׳רים בתשלום תימשך עד לסוף תקופת החיוב ששולמה. החזרים כספיים מטופלים בהתאם למדיניות ההחזרים של Paddle ולתקנות הגנת הצרכן החלות.',
+        '. הגישה לפיצ׳רים בתשלום תימשך עד לסוף תקופת החיוב ששולמה. החזרים כספיים מטופלים בהתאם למדיניות ההחזרים של Paddle ולתקנות הגנת הצרכן החלות.',
     ],
   },
   {
@@ -66,7 +67,7 @@ const SECTIONS_HE: LegalSection[] = [
   {
     heading: 'סיום פעילות ומחיקה',
     body: [
-      'אנו שומרים לעצמנו את הזכות להשעות או לסגור חשבונות המפרים תנאים אלה. באפשרותך לבקש מחיקה מלאה ולצמיתות של חשבונך וכל המידע הקשור אליו בכל עת, בפנייה לכתובת ' +
+      'אנו שומרים לעצמנו את הזכות להשעות או לסגור חשבונות המפרים תנאים אלה. באפשרותך למחוק את חשבונך וכל המידע הקשור אליו באופן עצמאי ולצמיתות, בכל עת, דרך "אזור סכנה" בהגדרות הפרופיל בתוך האפליקציה; לחלופין ניתן לפנות לתמיכה בכתובת ' +
         CONTACT_EMAIL +
         '. המחיקה, לאחר ביצועה, היא סופית ובלתי הפיכה.',
     ],
@@ -91,17 +92,17 @@ const SECTIONS_EN: LegalSection[] = [
     ],
   },
   {
-    heading: 'Free and Paid Plans',
+    heading: 'Free and Premium Plans',
     body: [
-      'ChoreChamps offers a free (FREE) plan that includes a limited number of AI-based quality checks and a capped number of proof/reference photos per task. Two paid subscription plans unlock expanded capabilities: the Premium plan at ₪19/month (unlimited AI checks, more reference and proof photos per task), and the Champ Academy plan at ₪39/month (all Premium benefits, plus PDF file uploads and a shared family wallet between siblings). Full, current pricing is always shown in the app interface.',
+      'ChoreChamps offers a free (FREE) plan that includes a limited number of AI-based quality checks, a capped number of proof/reference photos per task, a full ChoreCoins wallet (transfers between parent and child, and between siblings), and ads. One paid plan — Champ Premium — unlocks a completely ad-free experience, unlimited AI checks, more reference and proof photos per task, PDF file uploads, and expanded reference-photo storage. Premium is sold at two billing frequencies: ₪29.90/month, or ₪280/year (the annual plan saves about 22% overall — roughly ₪6.6 less per month than paying monthly). Full, current pricing is always shown in the app interface.',
     ],
   },
   {
     heading: 'Payments and Billing',
     body: [
-      'Payments are processed by Paddle.com, acting as the Merchant of Record for all transactions. Subscriptions renew automatically at the end of each billing period. You may request cancellation at any time by contacting support at ' +
+      'Payments are processed by Paddle.com, acting as the Merchant of Record for all transactions. Subscriptions renew automatically at the end of each chosen billing period (monthly or annual). You may cancel at any time, self-service, through Paddle’s Customer Portal (reachable from in-app profile settings), or by contacting support at ' +
         CONTACT_EMAIL +
-        '; access to paid features continues until the end of the paid billing period. Refunds are handled in accordance with Paddle’s refund policy and applicable consumer protection regulations.',
+        '. Access to paid features continues until the end of the paid billing period. Refunds are handled in accordance with Paddle’s refund policy and applicable consumer protection regulations.',
     ],
   },
   {
@@ -125,7 +126,7 @@ const SECTIONS_EN: LegalSection[] = [
   {
     heading: 'Termination and Deletion',
     body: [
-      'We reserve the right to suspend or terminate accounts that violate these Terms. You may request full, permanent deletion of your account and all associated data at any time by contacting ' +
+      'We reserve the right to suspend or terminate accounts that violate these Terms. You may delete your account and all associated data yourself, permanently, at any time, via the "Danger Zone" in profile settings within the app; alternatively you may contact ' +
         CONTACT_EMAIL +
         '. Once completed, deletion is final and irreversible.',
     ],
