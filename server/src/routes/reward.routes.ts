@@ -3,6 +3,7 @@ import { RewardCategory, RewardType } from '../entities/Reward';
 import { AuthenticatedRequest, requireAuth, requireParent, requireChild } from '../middleware/auth';
 import { createReward, getRewardCatalog, contributeToReward, fulfillReward, archiveReward } from '../services/rewardStore';
 import { toRewardDto } from '../utils/rewardSerializers';
+import { notifyRewardFulfilled, notifyRewardPurchased, notifySharedRewardContribution } from '../services/oneSignal';
 
 const router = Router();
 
@@ -91,11 +92,20 @@ router.post('/:id/contribute', requireAuth, requireChild, async (req: Authentica
   const child = req.user!;
   const rewardId = req.params.id as string;
   const { amount } = req.body as { amount?: unknown };
+  const amountNum = Number(amount);
 
-  const outcome = await contributeToReward(rewardId, child, Number(amount));
+  const outcome = await contributeToReward(rewardId, child, amountNum);
   if (!outcome.ok) {
     res.status(outcome.status).json({ error: outcome.error });
     return;
+  }
+
+  if (child.family) {
+    if (outcome.rewardType === RewardType.COLLABORATIVE) {
+      notifySharedRewardContribution(child.family.id, child.name, amountNum.toFixed(2), outcome.rewardTitle);
+    } else if (outcome.completed) {
+      notifyRewardPurchased(child.family.id, child.name, outcome.rewardTitle);
+    }
   }
 
   res.status(201).json({
@@ -124,6 +134,10 @@ router.post('/:id/fulfill', requireAuth, requireParent, async (req: Authenticate
   if (!outcome.ok) {
     res.status(outcome.status).json({ error: outcome.error });
     return;
+  }
+
+  if (outcome.targetChildId) {
+    notifyRewardFulfilled(outcome.targetChildId, outcome.rewardTitle);
   }
 
   res.json({ message: 'התגמול סומן כמומש בהצלחה', rewardId: outcome.rewardId });

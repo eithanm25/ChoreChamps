@@ -15,6 +15,7 @@ import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import type { FamilyInfo } from '../types/family';
 import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
 import LandingPage from './LandingPage';
+import { registerForPushNotifications } from '../services/oneSignal';
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -128,6 +129,13 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
     };
     loadInitialData();
   }, []);
+
+  // רישום המכשיר להתראות Push (OneSignal) — מתייג עם userId/familyId/role
+  // ומבקש הרשאת התראות. אין-אופ שקט אם VITE_ONESIGNAL_APP_ID לא מוגדר.
+  useEffect(() => {
+    if (!user.familyId) return;
+    registerForPushNotifications({ id: user.id, role: user.role, familyId: user.familyId });
+  }, [user.id, user.familyId, user.role]);
 
   // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שמשימות/חברים שהוריד
   // שינה בן משפחה אחר (למשל: משימה חדשה, מחיקת פרופיל) יופיעו בלי רענון ידני

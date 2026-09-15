@@ -16,6 +16,7 @@ import AvatarBadge from '../components/AvatarBadge';
 import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import SubscriptionPage from './SubscriptionPage';
 import LandingPage from './LandingPage';
+import { registerForPushNotifications } from '../services/oneSignal';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -119,6 +120,13 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     };
     loadInitialData();
   }, []);
+
+  // רישום המכשיר להתראות Push (OneSignal) — מתייג עם userId/familyId/role
+  // ומבקש הרשאת התראות. אין-אופ שקט אם VITE_ONESIGNAL_APP_ID לא מוגדר.
+  useEffect(() => {
+    if (!user.familyId) return;
+    registerForPushNotifications({ id: user.id, role: user.role, familyId: user.familyId });
+  }, [user.id, user.familyId, user.role]);
 
   // מתעדכן ברקע כדי שמכסת בדיקות ה-AI תישאר נכונה גם אחרי שהילד שולח משימות
   usePolling(refreshFamilyInfo);

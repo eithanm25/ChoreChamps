@@ -138,6 +138,9 @@ export type ContributeOutcome =
       targetAmount: string;
       remaining: string;
       completed: boolean;
+      /** For the caller to fire the right push notification without a second query. */
+      rewardTitle: string;
+      rewardType: RewardType;
     }
   | { ok: false; status: number; error: string };
 
@@ -261,6 +264,8 @@ export async function contributeToReward(
       targetAmount: reward.targetAmount,
       remaining: fromCents(Math.max(0, targetCents - totalCents)),
       completed,
+      rewardTitle: reward.title,
+      rewardType: reward.type,
     };
   });
 }
@@ -268,7 +273,7 @@ export async function contributeToReward(
 // ── Fulfill ─────────────────────────────────────────────────────────────
 
 export type FulfillOutcome =
-  | { ok: true; rewardId: string }
+  | { ok: true; rewardId: string; rewardTitle: string; targetChildId: string | null }
   | { ok: false; status: number; error: string };
 
 /** Parent confirms a fully-funded reward was actually handed over in real life. */
@@ -297,7 +302,7 @@ export async function fulfillReward(rewardId: string, familyId: string, parent: 
     return { ok: false, status: 409, error: 'התגמול כבר סומן כמומש' };
   }
 
-  return { ok: true, rewardId };
+  return { ok: true, rewardId, rewardTitle: reward.title, targetChildId: reward.targetChildId };
 }
 
 // ── Archive (cancel + refund) ───────────────────────────────────────────

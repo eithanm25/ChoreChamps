@@ -27,6 +27,7 @@ import {
   contentTypeForKey,
 } from '../services/storage';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
+import { notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
 import {
   FREE_TIER_AI_LIMIT,
   MAX_DAILY_SUBMISSIONS_PER_FAMILY,
@@ -289,6 +290,12 @@ router.post(
     });
 
     await taskRepo.save(task);
+
+    if (assignedChild) {
+      notifyTaskAssigned(assignedChild.id, task.title);
+    } else {
+      notifyTaskOpenForClaim(parent.family.id, task.title);
+    }
 
     res.status(201).json({ task: toTaskDto(task) });
   },
@@ -721,6 +728,8 @@ router.post(
         res.status(409).json({ error: 'המשימה כבר נשלחה להורים' });
         return;
       }
+
+      notifyTaskSubmitted(task.family.id, child.name, task.title);
 
       res.status(201).json({
         task: {

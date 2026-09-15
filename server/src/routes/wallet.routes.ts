@@ -5,6 +5,7 @@ import { ChildProfile } from '../entities/ChildProfile';
 import { User, UserRole } from '../entities/User';
 import { WalletTransaction, WalletTransactionType } from '../entities/WalletTransaction';
 import { toCents, fromCents } from '../utils/money';
+import { notifyWalletParentToChild, notifyWalletSiblingTransfer } from '../services/oneSignal';
 
 const router = Router();
 
@@ -68,7 +69,9 @@ router.post('/transfer-sibling', async (req: AuthenticatedRequest, res: Response
     const result = await AppDataSource.transaction(
       async (
         manager,
-      ): Promise<WalletOutcome<{ transactionId: string; newSourceBalance: string; newTargetBalance: string }>> => {
+      ): Promise<
+        WalletOutcome<{ transactionId: string; newSourceBalance: string; newTargetBalance: string; fromChildName: string }>
+      > => {
         const userRepo = manager.getRepository(User);
         const [sourceUser, targetUser] = await Promise.all([
           userRepo.findOne({ where: { id: sourceChildId, family: { id: familyId }, role: UserRole.CHILD } }),
@@ -115,7 +118,7 @@ router.post('/transfer-sibling', async (req: AuthenticatedRequest, res: Response
         });
         await manager.save(transaction);
 
-        return { ok: true, transactionId: transaction.id, newSourceBalance, newTargetBalance };
+        return { ok: true, transactionId: transaction.id, newSourceBalance, newTargetBalance, fromChildName: sourceUser.name };
       },
     );
 
@@ -123,6 +126,8 @@ router.post('/transfer-sibling', async (req: AuthenticatedRequest, res: Response
       res.status(result.status).json({ error: result.error });
       return;
     }
+
+    notifyWalletSiblingTransfer(targetChildId, result.fromChildName, amountStr);
 
     res.status(201).json({
       message: 'ההעברה בוצעה בהצלחה 💸',
@@ -225,6 +230,10 @@ router.post('/parent-adjust', requireParent, async (req: AuthenticatedRequest, r
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
+    }
+
+    if (action === 'give') {
+      notifyWalletParentToChild(childId, amountStr);
     }
 
     res.status(201).json({

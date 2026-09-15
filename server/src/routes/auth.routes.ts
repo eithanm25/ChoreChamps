@@ -9,6 +9,7 @@ import { signToken } from '../utils/token';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { PG_UNIQUE_VIOLATION } from '../services/familyCode';
 import { AVAILABLE_AVATARS } from '../utils/avatars';
+import { notifyFamilyGrew } from '../services/oneSignal';
 
 const router = Router();
 
@@ -101,6 +102,7 @@ router.post('/signup', async (req, res: Response) => {
     // הקוד חד-פעמי: מנטרלים אותו מיד כדי שאף אחד אחר לא יוכל להשתמש בו שוב.
     family.parentInviteCode = null;
     await familyRepo.save(family);
+    notifyFamilyGrew(family.id);
   }
 
   const token = signToken({
@@ -400,6 +402,7 @@ router.post('/google', async (req, res: Response) => {
       // הקוד חד-פעמי: מנטרלים אותו מיד כדי שאף אחד אחר לא יוכל להשתמש בו שוב.
       family.parentInviteCode = null;
       await familyRepo.save(family);
+      notifyFamilyGrew(family.id);
 
       const token = signToken({ userId: coParent.id, role: coParent.role, familyId: family.id });
 
