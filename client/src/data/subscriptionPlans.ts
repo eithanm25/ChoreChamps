@@ -66,6 +66,61 @@ export const PREMIUM_ANNUAL_SAVINGS_COPY = `המסלול השנתי חוסך כ-
  * PREMIUM_BILLING_OPTIONS above for the actual prices; `price`/`priceNote`
  * here just summarize both for a plain feature-comparison card.
  */
+export interface PricingMatrixCell {
+  included: boolean;
+  /** Short contrastive detail shown under the check/cross — e.g. "כולל פרסומות" vs "ללא פרסומות ✨". */
+  note?: string;
+}
+
+export interface PricingMatrixRow {
+  criterion: string;
+  free: PricingMatrixCell;
+  premium: PricingMatrixCell;
+}
+
+/**
+ * Row-by-row Free vs Premium comparison — same accuracy contract as PLANS
+ * above (every row here is checked against what the app actually enforces,
+ * not aspirational copy). Rendered by components/PricingComparisonMatrix.tsx.
+ */
+export const PRICING_MATRIX_ROWS: PricingMatrixRow[] = [
+  {
+    criterion: 'ארנק משפחתי והעברות כספים (ChoreCoins)',
+    free: { included: true },
+    premium: { included: true },
+  },
+  {
+    criterion: 'פרופילי ילדים ושותפים (עד 6 ילדים + סבא וסבתא)',
+    free: { included: true },
+    premium: { included: true },
+  },
+  {
+    criterion: 'גישה מלאה לחנות וחיפוש מוצרים חופשי',
+    free: { included: true },
+    premium: { included: true },
+  },
+  {
+    criterion: 'חוויה חלקה ונקייה מפרסומות',
+    free: { included: false, note: 'כולל פרסומות' },
+    premium: { included: true, note: 'ללא פרסומות ✨' },
+  },
+  {
+    criterion: 'עוזר אישי בינה מלאכותית (Unlimited Claude AI Assistant)',
+    free: { included: false, note: 'אישור הורים ידני ומסורבל' },
+    premium: { included: true, note: 'ניתוח תמונות, סיכום וציון מומלץ אוטומטי' },
+  },
+  {
+    criterion: 'פירוק חוברות עבודה ויצירת משימות מקבצי PDF ענקיים',
+    free: { included: false },
+    premium: { included: true },
+  },
+  {
+    criterion: 'נפח אחסון מורחב לתמונות הוכחה וייחוס באיכות גבוהה',
+    free: { included: false },
+    premium: { included: true },
+  },
+];
+
 export const PLANS: PlanCard[] = [
   {
     tier: 'free',

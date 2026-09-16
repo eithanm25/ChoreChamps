@@ -385,12 +385,13 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
         )}
 
         {/* ראש דף משחקי */}
-        <header className="bg-slate-800/50 border border-slate-700/50 p-5 rounded-2xl flex justify-between items-center shadow-xl">
-          <div>
-            <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">שלום הצ'מפיון {user.name}! 💪</h1>
-            <p className="text-slate-400 text-xs mt-0.5">כל משימה שתבצע מקדמת אותך לפרסים הגדולים</p>
+        <header className="bg-slate-800/50 border border-slate-700/50 p-4 sm:p-5 rounded-2xl flex flex-col gap-3 shadow-xl">
+          <div className="w-full">
+            <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">שלום הצ'מפיון {user.name}! 💪</h1>
+            <p className="text-slate-400 text-xs mt-0.5">מבצעים מטלות ומרוויחים פרסים! 🏆</p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* שורת כלים קומפקטית — פרופיל, עזרה והתנתקות */}
+          <div className="flex items-center justify-between gap-2 w-full">
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
@@ -401,15 +402,17 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
               <span className="text-slate-200 text-xs font-bold">{user.name.split(' ')[0]}</span>
               <span className="text-slate-400 text-xs">⚙️</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              title="מדריך שימוש"
-              className="w-8 h-8 shrink-0 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 flex items-center justify-center text-xs font-black transition-all"
-            >
-              ?
-            </button>
-            <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                title="מדריך שימוש"
+                className="w-8 h-8 shrink-0 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 flex items-center justify-center text-xs font-black transition-all"
+              >
+                ?
+              </button>
+              <button onClick={onLogout} className="px-4 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-xs font-bold hover:bg-rose-500/20 transition-all">התנתק</button>
+            </div>
           </div>
         </header>
 
@@ -429,26 +432,50 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
         <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 p-5 rounded-2xl shadow-xl flex items-center gap-4 relative overflow-hidden">
           <div className="text-3xl animate-bounce">🪙</div>
           <div>
-            <span className="text-slate-400 text-xs font-bold block">כמות המטבעות בחשבון שלי</span>
+            <span className="text-slate-400 text-xs font-bold block">הארנק שלי 💰</span>
             <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalance}</span>
           </div>
         </div>
 
-        {/* בורר טאבים אפליקטיבי */}
-        <nav className="bg-slate-800/40 p-1 rounded-full ring-1 ring-slate-700/40 flex max-w-lg text-[11px] sm:text-xs font-bold overflow-x-auto">
-          <button onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎯 משימות וחטיפה</button>
-          <button onClick={() => setActiveMainTab('rewards-store')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'rewards-store' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>🎁 חנות הפרסים שלי</button>
-          <button onClick={() => setActiveMainTab('family-leaderboard')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>👥 חברי המשפחה</button>
-          <button onClick={() => setActiveMainTab('wallet')} className={`flex-1 py-2 px-2 rounded-full transition-all whitespace-nowrap ${activeMainTab === 'wallet' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>💸 ארנק</button>
+        {/* בורר טאבים אפליקטיבי — גריד רחב-מלא, בלי גלילה אופקית */}
+        <nav className="grid grid-cols-4 gap-1.5 bg-slate-800/40 p-1.5 rounded-2xl ring-1 ring-slate-700/40 text-[11px] font-bold">
+          <button
+            onClick={() => { setActiveMainTab('tasks-hub'); setSelectedSibling(null); }}
+            className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all ${activeMainTab === 'tasks-hub' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}
+          >
+            <span className="text-base leading-none">🎯</span>
+            <span>מטלות</span>
+          </button>
+          <button
+            onClick={() => setActiveMainTab('rewards-store')}
+            className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all ${activeMainTab === 'rewards-store' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}
+          >
+            <span className="text-base leading-none">🎁</span>
+            <span>פרסים</span>
+          </button>
+          <button
+            onClick={() => setActiveMainTab('family-leaderboard')}
+            className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all ${activeMainTab === 'family-leaderboard' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}
+          >
+            <span className="text-base leading-none">👥</span>
+            <span>משפחה</span>
+          </button>
+          <button
+            onClick={() => setActiveMainTab('wallet')}
+            className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all ${activeMainTab === 'wallet' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}
+          >
+            <span className="text-base leading-none">💸</span>
+            <span>ארנק</span>
+          </button>
         </nav>
 
         {/* === טאב 1: לוח משימות פתוחות + המשימה הפעילה שלי === */}
         {activeMainTab === 'tasks-hub' && (
           <div className="flex flex-col gap-6 animate-fade-in">
             <section className="flex flex-col gap-3">
-              <h2 className="text-base font-bold text-slate-300">🎯 משימות פנויות בלוח (כל הקודם זוכה!)</h2>
+              <h2 className="text-base font-bold text-slate-300">🎯 מטלות פנויות לחטיפה! 🔥</h2>
               {openAvailableTasks.length === 0 ? (
-                <div className="text-center py-6 bg-slate-800/10 border border-slate-800 rounded-xl text-slate-500 text-xs">אין כרגע משימות פתוחות באוויר. אבא ואמא עוד לא העלו משהו חדש.</div>
+                <div className="text-center py-6 bg-slate-800/10 border border-slate-800 rounded-xl text-slate-500 text-xs">הלוח ריק! מחכים למטלות מאבא ואמא. 📭</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {openAvailableTasks.map(task => (
@@ -472,14 +499,14 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
 
             {/* ⏳ המשימה שלי */}
             <section className="flex flex-col gap-3 mt-2">
-              <h2 className="text-base font-bold text-slate-300">⏳ המשימה הנוכחית שלי</h2>
+              <h2 className="text-base font-bold text-slate-300">המשימה שלי ⏳</h2>
               {!myPendingTask ? (
                 <div className="text-center py-6 bg-slate-800/10 border border-slate-800 rounded-xl text-slate-500 text-xs">אינך מבצע שום משימה כרגע. חטוף משימה מהלוח שלמעלה כדי להתחיל להרוויח! 💰</div>
               ) : (
                 <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 shadow-xl flex flex-col gap-4">
                   <div className="flex justify-between items-start border-b border-indigo-500/10 pb-3">
                     <div>
-                      <span className="text-[10px] text-indigo-400 font-bold tracking-wider uppercase">משימה נעולה עליך</span>
+                      <span className="text-[10px] text-indigo-400 font-bold tracking-wider uppercase">בביצוע</span>
                       <h3 className="font-black text-white text-base mt-0.5">{myPendingTask.title}</h3>
                       {myPendingTask.description && <p className="text-slate-400 text-xs leading-relaxed mt-1">{myPendingTask.description}</p>}
                     </div>

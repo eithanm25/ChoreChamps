@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PLANS } from '../data/subscriptionPlans';
+import PricingComparisonMatrix from '../components/PricingComparisonMatrix';
 
 interface LandingPageProps {
   /**
@@ -324,6 +325,11 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
                   </ul>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3">
+              <h3 className="text-center text-white font-black text-lg">השוואה מלאה בין המסלולים 👇</h3>
+              <PricingComparisonMatrix />
             </div>
           </section>
         )}

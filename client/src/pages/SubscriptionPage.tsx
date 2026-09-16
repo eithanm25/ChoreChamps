@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { SubscriptionTier } from '../types/family';
 import { openCheckout, priceIdForBilling } from '../services/paddle';
 import MessageBanner from '../components/MessageBanner';
+import PricingComparisonMatrix from '../components/PricingComparisonMatrix';
 import {
   PLANS,
   PREMIUM_ANNUAL_SAVINGS_COPY,
@@ -192,6 +193,11 @@ export default function SubscriptionPage({ currentTier, onClose, familyId, email
               )}
             </div>
           )}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <h2 className="text-center text-white font-black text-lg sm:text-xl">למה שווה לשדרג? השוואה מלאה 👇</h2>
+          <PricingComparisonMatrix />
         </div>
 
         <p className="text-center text-slate-500 text-[11px]">
