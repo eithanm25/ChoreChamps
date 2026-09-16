@@ -27,7 +27,7 @@ import {
   contentTypeForKey,
 } from '../services/storage';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
-import { notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
+import { notifyTaskApproved, notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
 import {
   FREE_TIER_AI_LIMIT,
   MAX_DAILY_SUBMISSIONS_PER_FAMILY,
@@ -823,6 +823,8 @@ router.post(
       const profile = await AppDataSource.getRepository(ChildProfile).findOne({
         where: { id: outcome.childId },
       });
+
+      notifyTaskApproved(outcome.childId, outcome.taskTitle, outcome.totalPayout);
 
       res.json({
         task: {

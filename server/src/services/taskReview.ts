@@ -16,6 +16,8 @@ export type ReviewOutcome =
       totalPayout: string;
       finalScore: number;
       childId: string;
+      /** For the caller to fire the approval push notification without a second query. */
+      taskTitle: string;
       photoUrls: string[];
     }
   | {
@@ -181,6 +183,7 @@ export async function runReview(
     totalPayout,
     finalScore: review.finalScore,
     childId,
+    taskTitle: task.title,
     photoUrls,
   };
 }
