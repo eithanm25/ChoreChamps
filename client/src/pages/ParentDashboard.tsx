@@ -17,7 +17,6 @@ import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import SubscriptionPage from './SubscriptionPage';
 import LandingPage from './LandingPage';
 import { registerForPushNotifications } from '../services/oneSignal';
-import AdsManager from '../components/AdsManager';
 import BannerAd from '../components/BannerAd';
 
 interface DashboardProps {
@@ -858,10 +857,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
           />
         )}
 
-        {/* 📢 מודעת AdSense — רק למשפחות במסלול חינמי, בתחתית הדשבורד */}
-        <AdsManager isPremium={familyTier !== 'free'}>
-          <BannerAd />
-        </AdsManager>
+        {/* 📢 מודעת AdSense — הסקריפט הגלובלי נטען עבור כולם ב-App.tsx (כדי
+            שסריקת האימות של Google תעבור גם על מבקרים לא מחוברים); כרטיס
+            המודעה עצמו מוצג רק למשפחות במסלול חינמי, בתחתית הדשבורד */}
+        {familyTier === 'free' && <BannerAd />}
 
       </div>
     </div>

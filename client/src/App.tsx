@@ -14,6 +14,7 @@ import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
+import AdsManager from './components/AdsManager';
 
 // Same env var name the .env file already uses (VITE_CLIENT_ID, not the
 // VITE_GOOGLE_CLIENT_ID a fresh setup might expect) — kept as-is rather than
@@ -161,6 +162,15 @@ export default function App(): React.ReactNode {
 
 
   return (
+    // AdsManager is the outermost wrapper on purpose — it must mount (and
+    // inject the AdSense loader script) on the very first render of every
+    // route, logged in or not, for Google's own site-verification crawler
+    // to see it on an anonymous "/" load. No prop passed -> isPremium is
+    // undefined -> never blocked here; App.tsx has no reliable tier info
+    // (that's only known inside a dashboard, once its own family info
+    // loads), so the global instance always injects. It never blocks
+    // rendering either way; see its own docstring.
+    <AdsManager>
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} locale="iw">
     {/* הראוטר תמיד מרונדר — כדי שברגע שמסך הפתיחה נעלם לא יהיה שום הבזק של
         תוכן לא מוכן מתחתיו, היעד הנכון כבר מצויר שם מהרגע הראשון. */}
@@ -280,5 +290,6 @@ export default function App(): React.ReactNode {
       </Routes>
     </BrowserRouter>
     </GoogleOAuthProvider>
+    </AdsManager>
   );
 }
