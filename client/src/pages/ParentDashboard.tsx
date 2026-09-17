@@ -17,6 +17,8 @@ import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
 import SubscriptionPage from './SubscriptionPage';
 import LandingPage from './LandingPage';
 import { registerForPushNotifications } from '../services/oneSignal';
+import AdsManager from '../components/AdsManager';
+import BannerAd from '../components/BannerAd';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -855,6 +857,11 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
             }}
           />
         )}
+
+        {/* 📢 מודעת AdSense — רק למשפחות במסלול חינמי, בתחתית הדשבורד */}
+        <AdsManager isPremium={familyTier !== 'free'}>
+          <BannerAd />
+        </AdsManager>
 
       </div>
     </div>
