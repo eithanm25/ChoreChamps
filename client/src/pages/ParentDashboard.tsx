@@ -6,7 +6,8 @@ import type { SafeUser } from '../App';
 import ParentTasksList, { type Task } from '../components/ParentTasksList';
 import ParentRewardsPanel from '../components/ParentRewardsPanel';
 import MessageBanner from '../components/MessageBanner';
-import { usePolling } from '../hooks/usePolling';
+import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
+import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { FamilyInfo } from '../types/family';
 import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
@@ -129,12 +130,19 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     registerForPushNotifications({ id: user.id, role: user.role, familyId: user.familyId });
   }, [user.id, user.familyId, user.role]);
 
-  // מתעדכן ברקע כדי שמכסת בדיקות ה-AI תישאר נכונה גם אחרי שהילד שולח משימות
-  usePolling(refreshFamilyInfo);
+  // מתעדכן ברקע כדי שמכסת בדיקות ה-AI תישאר נכונה גם אחרי שהילד שולח משימות —
+  // ה-Broadcast מהשרת הוא המסלול הראשי, ה-polling רק רשת ביטחון איטית
+  usePolling(refreshFamilyInfo, FALLBACK_POLL_INTERVAL_MS);
 
-  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שהוספת/מחיקת בן משפחה
-  // מבוצעת בסשן אחר תופיע כאן בלי רענון ידני
-  usePolling(refreshMembers);
+  // מרעננים ברקע כדי שהוספת/מחיקת בן משפחה מבוצעת בסשן אחר תופיע כאן בלי
+  // רענון ידני — שוב, ה-polling כאן הוא רק רשת ביטחון איטית
+  usePolling(refreshMembers, FALLBACK_POLL_INTERVAL_MS);
+
+  // רענון בזמן אמת לכל דבר שמשפיע על הדשבורד הזה (מכסת AI, חברי משפחה)
+  useFamilyRealtime(user.familyId, () => {
+    refreshFamilyInfo();
+    refreshMembers();
+  });
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -650,7 +658,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                 {mainTab === 'tasks' && (
           <div className="flex flex-col gap-6 animate-fade-in">
             {/* לוח המעקב החכם (עם 3 הטאבים הפנימיים, צילומי התמונות וניתוח ה-JSONB) */}
-            <ParentTasksList tasks={tasks} setTasks={setTasks} familyTier={familyInfo?.tier} />
+            <ParentTasksList tasks={tasks} setTasks={setTasks} familyTier={familyInfo?.tier} familyId={user.familyId} />
 
             {/* טופס פרסום המשימות */}
             <section className="flex flex-col gap-4">
@@ -842,7 +850,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
         )}
 
         {/* === טאב 3: חנות הפרסים — פרסום תגמולים וניהול הקטלוג === */}
-        {mainTab === 'rewards' && <ParentRewardsPanel />}
+        {mainTab === 'rewards' && <ParentRewardsPanel familyId={user.familyId} />}
 
         {/* === טאב 4: העברת כספים — זיכוי/חיוב ישיר של ילד, זמין לכל המשפחות === */}
         {mainTab === 'wallet' && (

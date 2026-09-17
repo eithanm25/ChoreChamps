@@ -4,6 +4,7 @@ import { AuthenticatedRequest, requireAuth, requireParent, requireChild } from '
 import { createReward, getRewardCatalog, contributeToReward, fulfillReward, archiveReward } from '../services/rewardStore';
 import { toRewardDto } from '../utils/rewardSerializers';
 import { notifyRewardFulfilled, notifyRewardPurchased, notifySharedRewardContribution } from '../services/oneSignal';
+import { broadcastFamilyUpdate } from '../services/realtime';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.post('/', requireAuth, requireParent, async (req: AuthenticatedRequest, r
     return;
   }
 
+  broadcastFamilyUpdate(parent.family.id);
   res.status(201).json({ reward: toRewardDto(outcome.reward) });
 });
 
@@ -106,6 +108,7 @@ router.post('/:id/contribute', requireAuth, requireChild, async (req: Authentica
     } else if (outcome.completed) {
       notifyRewardPurchased(child.family.id, child.name, outcome.rewardTitle);
     }
+    broadcastFamilyUpdate(child.family.id);
   }
 
   res.status(201).json({
@@ -139,6 +142,7 @@ router.post('/:id/fulfill', requireAuth, requireParent, async (req: Authenticate
   if (outcome.targetChildId) {
     notifyRewardFulfilled(outcome.targetChildId, outcome.rewardTitle);
   }
+  broadcastFamilyUpdate(parent.family.id);
 
   res.json({ message: 'התגמול סומן כמומש בהצלחה', rewardId: outcome.rewardId });
 });
@@ -161,6 +165,7 @@ router.post('/:id/archive', requireAuth, requireParent, async (req: Authenticate
     return;
   }
 
+  broadcastFamilyUpdate(parent.family.id);
   res.json({ message: 'התגמול בוטל וכל התרומות הוחזרו', refundedTotal: outcome.refundedTotal });
 });
 

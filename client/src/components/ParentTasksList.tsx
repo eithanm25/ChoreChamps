@@ -4,7 +4,8 @@ import axios from 'axios';
 import api from '../services/api';
 import MessageBanner from './MessageBanner';
 import MediaThumbnail from './MediaThumbnail';
-import { usePolling } from '../hooks/usePolling';
+import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
+import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { SubscriptionTier } from '../types/family';
 
@@ -50,6 +51,8 @@ interface ParentTasksListProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   /** Gates the lightbox's download button — files are wiped on approval, so only Premium tier can save a copy first. */
   familyTier?: SubscriptionTier;
+  /** For subscribing to this family's realtime "something changed" channel. */
+  familyId?: string | null;
 }
 
 type TaskTab = 'unassigned' | 'in-progress' | 'pending-approval' | 'needs-fixing' | 'approved';
@@ -66,7 +69,7 @@ function getAssigneeLabel(task: Task): string {
   return 'צ׳אמפ';
 }
 
-export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentTasksListProps): React.ReactNode {
+export default function ParentTasksList({ tasks, setTasks, familyTier, familyId }: ParentTasksListProps): React.ReactNode {
   const allowDownload = familyTier === 'premium';
   const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
@@ -127,9 +130,10 @@ export default function ParentTasksList({ tasks, setTasks, familyTier }: ParentT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שמשימה שנוצרה/אושרה
-  // ע"י הורה אחר, או ילד שנוסף/הוסר, יופיעו כאן בלי רענון ידני
-  usePolling(fetchTasksAndChildren);
+  // מרעננים כדי שמשימה שנוצרה/אושרה ע"י הורה אחר, או ילד שנוסף/הוסר, יופיעו
+  // כאן בלי רענון ידני — ה-Broadcast הוא המסלול הראשי, ה-polling רשת ביטחון
+  usePolling(fetchTasksAndChildren, FALLBACK_POLL_INTERVAL_MS);
+  useFamilyRealtime(familyId, fetchTasksAndChildren);
 
   // 2. פונקציית מחיקת משימה חכמה (🗑️) עם עדכון ויזואלי מיידי
   const handleDelete = (taskId: string, taskTitle: string) => {

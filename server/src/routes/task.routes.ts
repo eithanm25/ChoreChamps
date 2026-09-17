@@ -28,6 +28,7 @@ import {
 } from '../services/storage';
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import { notifyTaskApproved, notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
+import { broadcastFamilyUpdate } from '../services/realtime';
 import {
   FREE_TIER_AI_LIMIT,
   MAX_DAILY_SUBMISSIONS_PER_FAMILY,
@@ -296,6 +297,7 @@ router.post(
     } else {
       notifyTaskOpenForClaim(parent.family.id, task.title);
     }
+    broadcastFamilyUpdate(parent.family.id);
 
     res.status(201).json({ task: toTaskDto(task) });
   },
@@ -460,6 +462,7 @@ router.post(
     task.status = TaskStatus.PENDING;
     task.assignedTo = child;
     await taskRepo.save(task);
+    broadcastFamilyUpdate(child.family.id);
 
     res.json({
       task: {
@@ -532,6 +535,7 @@ router.post(
     task.awardedBonus = null;
     task.finalScore = null;
     await taskRepo.save(task);
+    broadcastFamilyUpdate(task.family.id);
 
     res.json({
       message: 'Submission cancelled',
@@ -730,6 +734,7 @@ router.post(
       }
 
       notifyTaskSubmitted(task.family.id, child.name, task.title);
+      broadcastFamilyUpdate(task.family.id);
 
       res.status(201).json({
         task: {
@@ -809,6 +814,7 @@ router.post(
       await deleteObjects(outcome.photoUrls);
 
       if (outcome.action === 'reject') {
+        broadcastFamilyUpdate(familyId);
         res.json({
           task: {
             id: outcome.taskId,
@@ -825,6 +831,7 @@ router.post(
       });
 
       notifyTaskApproved(outcome.childId, outcome.taskTitle, outcome.totalPayout);
+      broadcastFamilyUpdate(familyId);
 
       res.json({
         task: {
@@ -890,6 +897,9 @@ router.delete(
 
       await taskRepo.remove(task);
       await deleteObjects(photoUrls);
+      if (parent.family) {
+        broadcastFamilyUpdate(parent.family.id);
+      }
       res.json({ message: 'המשימה נמחקה בהצלחה' });
     } catch (err) {
       console.error('[tasks/delete] failed:', err);
@@ -983,6 +993,9 @@ router.put(
       }
 
       await taskRepo.save(task);
+      if (parent.family) {
+        broadcastFamilyUpdate(parent.family.id);
+      }
       res.json({ task: toTaskDto(task) });
     } catch (err) {
       console.error('[tasks/update] failed:', err);

@@ -6,6 +6,7 @@ import { User, UserRole } from '../entities/User';
 import { WalletTransaction, WalletTransactionType } from '../entities/WalletTransaction';
 import { toCents, fromCents } from '../utils/money';
 import { notifyWalletParentToChild, notifyWalletSiblingTransfer } from '../services/oneSignal';
+import { broadcastFamilyUpdate } from '../services/realtime';
 
 const router = Router();
 
@@ -128,6 +129,7 @@ router.post('/transfer-sibling', async (req: AuthenticatedRequest, res: Response
     }
 
     notifyWalletSiblingTransfer(targetChildId, result.fromChildName, amountStr);
+    broadcastFamilyUpdate(familyId);
 
     res.status(201).json({
       message: 'ההעברה בוצעה בהצלחה 💸',
@@ -235,6 +237,7 @@ router.post('/parent-adjust', requireParent, async (req: AuthenticatedRequest, r
     if (action === 'give') {
       notifyWalletParentToChild(childId, amountStr);
     }
+    broadcastFamilyUpdate(familyId);
 
     res.status(201).json({
       message: action === 'give' ? 'המטבעות נוספו בהצלחה 🎁' : 'המטבעות נוכו בהצלחה',

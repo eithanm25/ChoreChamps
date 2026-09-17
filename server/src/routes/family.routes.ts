@@ -13,6 +13,7 @@ import { generateInviteCode, generateShortInviteCode, hashPassword } from '../ut
 import { signToken } from '../utils/token';
 import { Task, TaskStatus } from '../entities/Task';
 import { generateUniqueFamilyCode, PG_UNIQUE_VIOLATION } from '../services/familyCode';
+import { broadcastFamilyUpdate } from '../services/realtime';
 
 const router = Router();
 
@@ -225,6 +226,7 @@ router.post(
 
     const uniqueLink = `${APP_BASE_URL}/login?family=${parent.family.familyCode}&username=${encodeURIComponent(child.name)}`;
 
+    broadcastFamilyUpdate(parent.family.id);
     res.status(201).json({
       child: {
         id: child.id,
@@ -296,7 +298,11 @@ router.delete(
       // משימות שההורה הנמחק פרסם, וסאבמישנים ששלח ילד שנמחק, לא חוסמים את
       // המחיקה — שני היחסים מוגדרים כ-onDelete: 'SET NULL' ברמת הסכמה.
       await userRepo.remove(memberToDelete);
-      
+
+      if (parent.family) {
+        broadcastFamilyUpdate(parent.family.id);
+      }
+
       res.json({ message: 'בן המשפחה הוסר בהצלחה, והמשימות שלו טופלו בהתאם' });
 
     } catch (err) {

@@ -8,6 +8,7 @@ import { Reward } from '../entities/Reward';
 import { WalletTransaction } from '../entities/WalletTransaction';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { deleteObjects } from '../services/storage';
+import { broadcastFamilyUpdate } from '../services/realtime';
 
 const router = Router();
 
@@ -34,6 +35,9 @@ router.delete('/purge-account', requireAuth, async (req: AuthenticatedRequest, r
     if (user.role === UserRole.CHILD) {
       await releaseChildTasks(user.id);
       await userRepo.remove(user);
+      if (user.family) {
+        broadcastFamilyUpdate(user.family.id);
+      }
       res.json({ message: 'החשבון נמחק לצמיתות' });
       return;
     }
@@ -51,6 +55,7 @@ router.delete('/purge-account', requireAuth, async (req: AuthenticatedRequest, r
 
     if (otherParents > 0) {
       await userRepo.remove(user);
+      broadcastFamilyUpdate(user.family.id);
       res.json({ message: 'החשבון נמחק לצמיתות' });
       return;
     }

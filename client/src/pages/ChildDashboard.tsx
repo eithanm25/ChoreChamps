@@ -7,7 +7,8 @@ import MessageBanner from '../components/MessageBanner';
 import MediaThumbnail from '../components/MediaThumbnail';
 import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
 import CameraCapture from '../components/CameraCapture';
-import { usePolling } from '../hooks/usePolling';
+import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
+import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import ChildRewardsStore from '../components/ChildRewardsStore';
 import WalletTransferPanel from '../components/WalletTransferPanel';
 import AvatarBadge from '../components/AvatarBadge';
@@ -137,9 +138,10 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
     registerForPushNotifications({ id: user.id, role: user.role, familyId: user.familyId });
   }, [user.id, user.familyId, user.role]);
 
-  // מרעננים ברקע כל כמה שניות + מיד כשחוזרים לטאב, כדי שמשימות/חברים שהוריד
-  // שינה בן משפחה אחר (למשל: משימה חדשה, מחיקת פרופיל) יופיעו בלי רענון ידני
-  usePolling(fetchDashboardData);
+  // רענון בזמן אמת — ה-Broadcast מהשרת (ראו useFamilyRealtime) הוא המסלול
+  // הראשי כעת; ה-polling נשאר רק כרשת ביטחון איטית למקרה של הודעה שהוחמצה
+  usePolling(fetchDashboardData, FALLBACK_POLL_INTERVAL_MS);
+  useFamilyRealtime(user.familyId, fetchDashboardData);
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {

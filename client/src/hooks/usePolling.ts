@@ -4,6 +4,17 @@ import { useEffect, useRef } from 'react';
 export const DEFAULT_POLL_INTERVAL_MS = 8000;
 
 /**
+ * Safety-net cadence used everywhere usePolling is paired with
+ * useFamilyRealtime (see hooks/useFamilyRealtime.ts) — realtime broadcasts
+ * are the primary way these refresh now, so this interval only exists to
+ * self-heal a missed broadcast (a dropped connection, a backgrounded tab
+ * reconnecting) rather than to be the main freshness mechanism. Far slower
+ * than DEFAULT_POLL_INTERVAL_MS on purpose: this is what actually cuts the
+ * request volume hitting the server.
+ */
+export const FALLBACK_POLL_INTERVAL_MS = 60000;
+
+/**
  * Refetches on a fixed interval, and immediately whenever the tab regains
  * focus or becomes visible again — so a task another family member created,
  * approved, or a member someone deleted shows up without a manual reload.

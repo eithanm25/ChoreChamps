@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import api from '../services/api';
-import { usePolling } from '../hooks/usePolling';
+import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
+import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import RewardCard from './RewardCard';
 import MessageBanner from './MessageBanner';
 import type { RewardDto, RewardCategory } from '../types/reward';
@@ -48,8 +49,10 @@ export default function ChildRewardsStore({ user, balance }: ChildRewardsStorePr
     loadInitial();
   }, []);
 
-  // מתעדכן אוטומטית כשבן משפחה אחר תורם ליעד המשותף, בלי רענון ידני
-  usePolling(fetchRewards);
+  // מתעדכן אוטומטית כשבן משפחה אחר תורם ליעד המשותף, בלי רענון ידני —
+  // ה-Broadcast מהשרת הוא המסלול הראשי, ה-polling רק רשת ביטחון איטית
+  usePolling(fetchRewards, FALLBACK_POLL_INTERVAL_MS);
+  useFamilyRealtime(user.familyId, fetchRewards);
 
   const handleContribute = async (rewardId: string, amount: number) => {
     try {

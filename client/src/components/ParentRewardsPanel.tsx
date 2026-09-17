@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
-import { usePolling } from '../hooks/usePolling';
+import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
+import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import RewardCard from './RewardCard';
 import PendingFulfillmentCard from './PendingFulfillmentCard';
 import MessageBanner from './MessageBanner';
@@ -41,7 +42,12 @@ const emptyForm = {
  * to be handed over, and a collapsible history of what's already been
  * delivered.
  */
-export default function ParentRewardsPanel(): React.ReactNode {
+interface ParentRewardsPanelProps {
+  /** For subscribing to this family's realtime "something changed" channel. */
+  familyId?: string | null;
+}
+
+export default function ParentRewardsPanel({ familyId }: ParentRewardsPanelProps): React.ReactNode {
   const [rewards, setRewards] = useState<RewardDto[]>([]);
   const [children, setChildren] = useState<FamilyChild[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +90,8 @@ export default function ParentRewardsPanel(): React.ReactNode {
     loadInitial();
   }, []);
 
-  usePolling(fetchRewards);
+  usePolling(fetchRewards, FALLBACK_POLL_INTERVAL_MS);
+  useFamilyRealtime(familyId, fetchRewards);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
