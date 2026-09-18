@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
@@ -15,8 +15,13 @@ import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
 import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
 import AvatarBadge from '../components/AvatarBadge';
 import ProfileSettingsPanel from '../components/ProfileSettingsPanel';
-import SubscriptionPage from './SubscriptionPage';
 import LandingPage from './LandingPage';
+import RouteLoadingFallback from '../components/RouteLoadingFallback';
+
+// Lazy on purpose: this pulls in @paddle/paddle-js, and only ever mounts
+// once a parent already inside the (already-loaded) dashboard clicks
+// "upgrade" — never on initial load, never for a crawler.
+const SubscriptionPage = lazy(() => import('./SubscriptionPage'));
 import { registerForPushNotifications } from '../services/oneSignal';
 import BannerAd from '../components/BannerAd';
 
@@ -449,12 +454,17 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
         )}
 
         {subscriptionOpen && (
-          <SubscriptionPage
-            currentTier={familyTier}
-            onClose={() => setSubscriptionOpen(false)}
-            familyId={user.familyId ?? null}
-            email={user.email}
-          />
+          // A local boundary, not just the app-level one in App.tsx — without
+          // it, suspending here would bubble up and blank the whole
+          // already-rendered dashboard behind it, not just this overlay.
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <SubscriptionPage
+              currentTier={familyTier}
+              onClose={() => setSubscriptionOpen(false)}
+              familyId={user.familyId ?? null}
+              email={user.email}
+            />
+          </Suspense>
         )}
 
         <nav className="bg-slate-800/40 p-1.5 rounded-2xl sm:rounded-full ring-1 ring-slate-700/50 flex flex-col sm:flex-row gap-2 w-full sm:max-w-lg">

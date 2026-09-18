@@ -1,14 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import axios from 'axios';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import api from './services/api';
 import AuthPage from './pages/AuthPage';
 import Login from './pages/Login';
-import ParentOnboardingPage from './pages/ParentOnBoardingPage';
-import ParentDashboard from './pages/ParentDashboard';
 import './App.css';
-import ChildDashboard from './pages/ChildDashboard';
 import LandingPage from './pages/LandingPage';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -16,6 +13,21 @@ import RefundPolicy from './pages/RefundPolicy';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
 import AdsManager from './components/AdsManager';
+import RouteLoadingFallback from './components/RouteLoadingFallback';
+
+// Code-split on purpose: these three are by far the heaviest bundles (task
+// management, reward store, wallet panels, camera capture, the Paddle/
+// OneSignal/Supabase-realtime wiring) and are only ever reached *after*
+// login — a crawler (Google, AdSense) never sees them, so a lazy chunk's
+// brief real network-fetch delay can never be mistaken for "no content."
+// LandingPage/Login/AuthPage/the legal pages stay as regular eager imports
+// above for exactly that reason: those are the pages a crawler does land
+// on, and any Suspense boundary — even a fast one — means the page isn't
+// in the very first render, which is the class of bug the splash-screen
+// fix last commit specifically eliminated. Not reopening that here.
+const ParentOnboardingPage = lazy(() => import('./pages/ParentOnBoardingPage'));
+const ParentDashboard = lazy(() => import('./pages/ParentDashboard'));
+const ChildDashboard = lazy(() => import('./pages/ChildDashboard'));
 
 // Same env var name the .env file already uses (VITE_CLIENT_ID, not the
 // VITE_GOOGLE_CLIENT_ID a fresh setup might expect) — kept as-is rather than
@@ -182,6 +194,7 @@ export default function App(): React.ReactNode {
     )}
     <BrowserRouter>
       <InstallPwaPrompt />
+      <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         {/* עמוד הבית — דף הנחיתה השיווקי למי שלא מחובר, או הפניה לדשבורד אם
             כבר מחוברים. קישורי הזמנה (?inviteCode= / ?family=&username=)
@@ -292,6 +305,7 @@ export default function App(): React.ReactNode {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
     </GoogleOAuthProvider>
     </AdsManager>
