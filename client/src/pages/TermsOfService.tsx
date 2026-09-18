@@ -41,9 +41,9 @@ const SECTIONS_HE: LegalSection[] = [
   {
     heading: 'תשלומים וחיובים',
     body: [
-      'התשלומים מעובדים על ידי Paddle.com, המשמש כ-Merchant of Record הרשמי של כל עסקה. המנויים מתחדשים אוטומטית בסוף כל תקופת החיוב שנבחרה (חודשית או שנתית). ניתן לבטל את המנוי באופן עצמאי בכל עת דרך פורטל ניהול המנוי של Paddle, הנגיש מהגדרות הפרופיל בתוך האפליקציה; לחלופין ניתן לפנות לתמיכה בכתובת ' +
+      'התשלומים מעובדים על ידי Paddle.com, המשמש כ-Merchant of Record הרשמי של כל עסקה. חשוב לדעת: מכיוון ש-Paddle הוא ה-Merchant of Record, החיוב בכרטיס האשראי/דוח הבנק שלך יופיע תחת השם "Alex Markov" ו/או "Paddle.com" — זהו החיוב הרשמי והתקין עבור המנוי שלך ב-ChoreChamps, אין להירתע ממנו. המנויים מתחדשים אוטומטית בסוף כל תקופת החיוב שנבחרה (חודשית או שנתית). ניתן לבטל את המנוי באופן עצמאי בכל עת דרך פורטל ניהול המנוי של Paddle, הנגיש מהגדרות הפרופיל בתוך האפליקציה; לחלופין ניתן לפנות לתמיכה בכתובת ' +
         CONTACT_EMAIL +
-        '. הגישה לפיצ׳רים בתשלום תימשך עד לסוף תקופת החיוב ששולמה. החזרים כספיים מטופלים בהתאם למדיניות ההחזרים של Paddle ולתקנות הגנת הצרכן החלות.',
+        '. הגישה לפיצ׳רים בתשלום תימשך עד לסוף תקופת החיוב ששולמה. החזרים כספיים מטופלים בהתאם למדיניות ההחזרים של Paddle ולתקנות הגנת הצרכן החלות — ראו מדיניות הביטול וההחזרים שלנו.',
     ],
   },
   {
@@ -100,9 +100,9 @@ const SECTIONS_EN: LegalSection[] = [
   {
     heading: 'Payments and Billing',
     body: [
-      'Payments are processed by Paddle.com, acting as the Merchant of Record for all transactions. Subscriptions renew automatically at the end of each chosen billing period (monthly or annual). You may cancel at any time, self-service, through Paddle’s Customer Portal (reachable from in-app profile settings), or by contacting support at ' +
+      'Payments are processed by Paddle.com, acting as the Merchant of Record for all transactions. Important: because Paddle is the Merchant of Record, your card/bank statement will show the charge under the name "Alex Markov" and/or "Paddle.com" — this is the correct, official charge for your ChoreChamps subscription, not a cause for concern. Subscriptions renew automatically at the end of each chosen billing period (monthly or annual). You may cancel at any time, self-service, through Paddle’s Customer Portal (reachable from in-app profile settings), or by contacting support at ' +
         CONTACT_EMAIL +
-        '. Access to paid features continues until the end of the paid billing period. Refunds are handled in accordance with Paddle’s refund policy and applicable consumer protection regulations.',
+        '. Access to paid features continues until the end of the paid billing period. Refunds are handled in accordance with Paddle’s refund policy and applicable consumer protection regulations — see our Refund and Cancellation Policy.',
     ],
   },
   {
