@@ -348,7 +348,7 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             >
               נסו בחינם 🚀
             </Link>
-            <div className="flex items-center gap-4 mt-6 text-[11px]">
+            <div className="flex items-center gap-4 mt-6 text-[11px] flex-wrap justify-center">
               <Link to="/terms" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
                 תנאי שימוש
               </Link>
@@ -356,6 +356,17 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
               <Link to="/privacy" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
                 מדיניות פרטיות
               </Link>
+              <span className="text-slate-700">•</span>
+              <Link to="/refund-policy" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
+                מדיניות ביטול והחזרים
+              </Link>
+              <span className="text-slate-700">•</span>
+              <a
+                href="mailto:chorechampssupport@gmail.com"
+                className="text-slate-500 hover:text-slate-300 font-medium transition-colors"
+              >
+                chorechampssupport@gmail.com
+              </a>
             </div>
             <p className="text-slate-600 text-[11px]">© {new Date().getFullYear()} ChoreChamps. כל הזכויות שמורות.</p>
           </div>

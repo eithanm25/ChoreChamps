@@ -205,9 +205,13 @@ export default function SubscriptionPage({ currentTier, onClose, familyId, email
           <Link to="/terms" className="text-indigo-400 font-bold hover:text-indigo-300 mx-1">
             תנאי השימוש
           </Link>
-          ול
+          ,
           <Link to="/privacy" className="text-indigo-400 font-bold hover:text-indigo-300 mx-1">
             מדיניות הפרטיות
+          </Link>
+          ול
+          <Link to="/refund-policy" className="text-indigo-400 font-bold hover:text-indigo-300 mx-1">
+            מדיניות הביטול וההחזרים
           </Link>
           שלנו. התשלום מעובד ומאובטח על ידי Paddle.com.
         </p>

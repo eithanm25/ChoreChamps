@@ -1,7 +1,7 @@
 import React from 'react';
 import LegalDocumentLayout, { type LegalSection } from '../components/LegalDocumentLayout';
 
-const CONTACT_EMAIL = 'support@chorechampsapp.com';
+const CONTACT_EMAIL = 'chorechampssupport@gmail.com';
 
 /**
  * Corrections made against what the app actually does (both languages):

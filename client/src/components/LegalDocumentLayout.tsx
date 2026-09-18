@@ -96,12 +96,28 @@ export default function LegalDocumentLayout({
           ))}
         </div>
 
-        <p className="text-slate-500 text-xs border-t border-slate-800 pt-6">
-          {isHebrew ? 'שאלות? נשמח לעזור: ' : 'Questions? We are happy to help: '}
-          <a href={`mailto:${contactEmail}`} className="text-indigo-400 font-bold hover:text-indigo-300">
-            {contactEmail}
-          </a>
-        </p>
+        <div className="flex flex-col gap-3 border-t border-slate-800 pt-6">
+          <nav className="flex items-center gap-3 text-xs flex-wrap">
+            <Link to="/terms" className="text-slate-400 hover:text-slate-200 font-medium transition-colors">
+              {isHebrew ? 'תנאי שימוש' : 'Terms of Service'}
+            </Link>
+            <span className="text-slate-700">•</span>
+            <Link to="/privacy" className="text-slate-400 hover:text-slate-200 font-medium transition-colors">
+              {isHebrew ? 'מדיניות פרטיות' : 'Privacy Policy'}
+            </Link>
+            <span className="text-slate-700">•</span>
+            <Link to="/refund-policy" className="text-slate-400 hover:text-slate-200 font-medium transition-colors">
+              {isHebrew ? 'מדיניות ביטול והחזרים' : 'Refund & Cancellation Policy'}
+            </Link>
+          </nav>
+          <p className="text-slate-500 text-xs">
+            {isHebrew ? 'שאלות? נשמח לעזור: ' : 'Questions? We are happy to help: '}
+            <a href={`mailto:${contactEmail}`} className="text-indigo-400 font-bold hover:text-indigo-300">
+              {contactEmail}
+            </a>
+          </p>
+          <p className="text-slate-600 text-[11px]">© {new Date().getFullYear()} ChoreChamps.</p>
+        </div>
       </main>
     </div>
   );

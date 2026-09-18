@@ -12,6 +12,7 @@ import ChildDashboard from './pages/ChildDashboard';
 import LandingPage from './pages/LandingPage';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import RefundPolicy from './pages/RefundPolicy';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
 import AdsManager from './components/AdsManager';
@@ -285,6 +286,7 @@ export default function App(): React.ReactNode {
             בדיקה כמו Paddle וגם למשתמשים מחוברים) */}
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/refund-policy" element={<RefundPolicy />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
