@@ -41,6 +41,16 @@ build/Release
 node_modules/
 jspm_packages/
 
+# This is an npm workspaces monorepo — package-lock.json at the repo root is
+# the one authoritative lockfile. A per-workspace one (e.g. running `npm
+# install` with cwd already inside client/ or server/) is a stale duplicate
+# that silently drifts out of sync with real dependencies (this happened:
+# client/package-lock.json was missing packages added months after it was
+# generated) and can confuse tooling that expects a single lockfile. Never
+# commit one.
+/client/package-lock.json
+/server/package-lock.json
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 

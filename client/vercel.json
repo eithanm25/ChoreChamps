@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "if [ -d server ]; then npm install --workspace=client; else cd .. && npm install --workspace=client; fi",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

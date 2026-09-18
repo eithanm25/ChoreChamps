@@ -4,7 +4,13 @@
  *   1. Save the app artwork as  client/public/icons/icon-source.png
  *      Ideally square and >= 1024x1024. A full-bleed background (the artwork
  *      already fills the frame edge to edge) works best for the maskable icon.
- *   2. Run  npm run icons   from client/  (or  npm run icons --workspace=client).
+ *   2. `sharp` is deliberately NOT a package.json dependency — it's a heavy
+ *      native-binary library this one manual/occasional script needs and
+ *      nothing else does (not the app bundle, not `build`/`dev`/`lint`), so
+ *      keeping it out of package.json keeps every real install (including
+ *      every Vercel deploy) lighter. Install it on-demand right before running
+ *      this:  npm install --no-save sharp --workspace=client
+ *   3. Run  npm run icons   from client/  (or  npm run icons --workspace=client).
  *
  * Outputs (referenced by manifest.json and index.html):
  *   icon-192.png             192x192  "any" purpose
