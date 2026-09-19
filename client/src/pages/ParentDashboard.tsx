@@ -810,6 +810,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                           type="number"
                           name="basePrice"
                           step="0.01"
+                          min="0.01"
                           value={taskForm.basePrice}
                           onChange={handleTaskInputChange}
                           placeholder="10"
@@ -824,6 +825,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                           type="number"
                           name="maxBonusPrice"
                           step="0.01"
+                          min="0"
                           value={taskForm.maxBonusPrice}
                           onChange={handleTaskInputChange}
                           placeholder="5"

@@ -389,6 +389,7 @@ export default function ParentTasksList({ tasks, setTasks, familyTier, familyId 
                           type="number"
                           name="basePrice"
                           step="0.1"
+                          min="0.01"
                           value={editForm.basePrice}
                           onChange={handleEditInputChange}
                           className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 focus:outline-none text-left"
@@ -402,6 +403,7 @@ export default function ParentTasksList({ tasks, setTasks, familyTier, familyId 
                           type="number"
                           name="maxBonusPrice"
                           step="0.1"
+                          min="0"
                           value={editForm.maxBonusPrice}
                           onChange={handleEditInputChange}
                           className="p-2 bg-slate-800 rounded-lg text-white ring-1 ring-slate-700 text-left focus:outline-none"

@@ -219,6 +219,13 @@ router.post(
       res.status(400).json({ error: 'basePrice and maxBonusPrice are required and must be numbers' });
       return;
     }
+    // basePrice must be a real positive payout (a $0/negative task pays out
+    // nothing, or worse, could go negative at approval); maxBonusPrice may be
+    // exactly 0 (a parent opting out of AI-scored bonus pay), just never negative.
+    if (parsedBasePrice <= 0 || parsedMaxBonusPrice < 0) {
+      res.status(400).json({ error: 'basePrice must be greater than 0, and maxBonusPrice cannot be negative' });
+      return;
+    }
 
     const parent = req.user!;
     if (!parent.family) {
@@ -948,9 +955,24 @@ router.put(
       if (title && typeof title === 'string') task.title = title.trim();
       if (description !== undefined) task.description = description.trim();
 
-      // עדכון שדות כסף (ממירים לסטרינג קבוע עם 2 ספרות אחרי הנקודה)
-      if (typeof basePrice === 'number') task.basePrice = basePrice.toFixed(2);
-      if (typeof maxBonusPrice === 'number') task.maxBonusPrice = maxBonusPrice.toFixed(2);
+      // עדכון שדות כסף (ממירים לסטרינג קבוע עם 2 ספרות אחרי הנקודה) — מאומתים
+      // באותו אופן כמו ביצירת משימה: מחיר בסיס חייב להיות חיובי ממש, בונוס גג
+      // מותר להיות 0 (הורה שמוותר על בונוס AI) אך לא שלילי. typeof 'number'
+      // לבדו לא מספיק — NaN עובר אותו בדיקה בג'אווהסקריפט.
+      if (basePrice !== undefined) {
+        if (typeof basePrice !== 'number' || !Number.isFinite(basePrice) || basePrice <= 0) {
+          res.status(400).json({ error: 'מחיר הבסיס חייב להיות מספר חיובי גדול מ-0' });
+          return;
+        }
+        task.basePrice = basePrice.toFixed(2);
+      }
+      if (maxBonusPrice !== undefined) {
+        if (typeof maxBonusPrice !== 'number' || !Number.isFinite(maxBonusPrice) || maxBonusPrice < 0) {
+          res.status(400).json({ error: 'בונוס הגג לא יכול להיות שלילי' });
+          return;
+        }
+        task.maxBonusPrice = maxBonusPrice.toFixed(2);
+      }
 
       // לוגיקת שיוך דינמית ומורכבת
       if (assignedToId !== undefined) {

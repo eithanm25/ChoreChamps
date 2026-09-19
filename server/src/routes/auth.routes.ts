@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from '../utils/crypto';
 import { signToken } from '../utils/token';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { PG_UNIQUE_VIOLATION } from '../services/familyCode';
+import { signupLimiter } from '../middleware/rateLimit';
 import { AVAILABLE_AVATARS } from '../utils/avatars';
 import { notifyFamilyGrew } from '../services/oneSignal';
 import { broadcastFamilyUpdate } from '../services/realtime';
@@ -48,7 +49,7 @@ function getGoogleClient(): OAuth2Client | null {
  *     ?inviteCode=... link used by the Google button on /signup — a co-parent
  *     must end up in the same family regardless of which method they choose.
  */
-router.post('/signup', async (req, res: Response) => {
+router.post('/signup', signupLimiter, async (req, res: Response) => {
   const { email, password, name, inviteCode } = req.body as {
     email?: string;
     password?: string;

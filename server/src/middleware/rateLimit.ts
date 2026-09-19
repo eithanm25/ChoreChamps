@@ -30,6 +30,30 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * `POST /api/auth/signup`: caps how many NEW accounts one IP can
+ * successfully create — this, not family-per-account (already hard-capped
+ * to exactly one, see family.routes.ts's POST /create), is the real abuse
+ * lever. Nothing today verifies the email or requires solving a CAPTCHA on
+ * this path, so a script minting fresh throwaway emails could otherwise
+ * spin up unlimited families, each with its own fresh FREE_TIER_AI_LIMIT of
+ * real, paid Anthropic vision calls.
+ *
+ * Opposite of authLimiter on purpose: `skipFailedRequests: true` means only
+ * SUCCESSFUL (2xx) signups count. On this specific route, success cleanly
+ * means "a new account was created" (an existing email returns 409), so a
+ * real family occasionally mistyping their email and retrying never gets
+ * penalized — only an actual run of successful account creation does.
+ */
+export const signupLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 10,
+  skipFailedRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'הגעתם למגבלת יצירת החשבונות היומית מכתובת ה-IP הזו. נסו שוב מחר, או פנו לתמיכה.' },
+});
+
+/**
  * `POST /api/tasks/:taskId/submit`: hard ceiling on proof submissions so a
  * stolen or abused token cannot run up the Anthropic bill — every submission
  * can trigger a paid vision call.
