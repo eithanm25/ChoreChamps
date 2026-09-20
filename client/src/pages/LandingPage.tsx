@@ -17,7 +17,7 @@ interface LandingPageProps {
 }
 
 interface FeatureItem {
-  icon: string;
+  icon?: string;
   title: string;
   description: string;
 }
@@ -102,9 +102,19 @@ const REWARD_TIERS: RewardTier[] = [
   },
 ];
 
-/** Small pure-CSS accordion — no measuring JS, animates via a grid-rows trick. */
-function FeatureAccordion({ items }: { items: FeatureItem[] }): React.ReactNode {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+/**
+ * Small pure-CSS accordion — no measuring JS, animates via a grid-rows trick.
+ * Reused for both the feature lists (icon + short title) and the FAQ (icon
+ * omitted, question as title) — same interaction, different data shape.
+ */
+function FeatureAccordion({
+  items,
+  defaultOpenIndex = 0,
+}: {
+  items: FeatureItem[];
+  defaultOpenIndex?: number | null;
+}): React.ReactNode {
+  const [openIndex, setOpenIndex] = useState<number | null>(defaultOpenIndex);
 
   return (
     <div className="flex flex-col gap-3">
@@ -118,7 +128,7 @@ function FeatureAccordion({ items }: { items: FeatureItem[] }): React.ReactNode 
               className="w-full flex items-center justify-between gap-3 p-4 text-right"
             >
               <span className="flex items-center gap-3 min-w-0">
-                <span className="text-xl shrink-0">{item.icon}</span>
+                {item.icon && <span className="text-xl shrink-0">{item.icon}</span>}
                 <span className="font-bold text-white text-sm sm:text-base">{item.title}</span>
               </span>
               <span className={`text-slate-500 shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
@@ -143,6 +153,209 @@ function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }):
       <span className="text-indigo-400 text-xs font-black tracking-widest">{eyebrow}</span>
       <h2 className="text-2xl sm:text-3xl font-black text-white">{title}</h2>
     </div>
+  );
+}
+
+interface LifecycleStep {
+  step: string;
+  icon: string;
+  title: string;
+  description: string;
+}
+
+const TASK_LIFECYCLE: LifecycleStep[] = [
+  {
+    step: '1',
+    icon: '📝',
+    title: 'ההורה יוצר משימה',
+    description: 'כותרת, תיאור ברור ומחיר במטבעות — ואפשר לצרף תמונת המחשה כדי שיהיה חד-משמעי מה מצפים לראות בסוף.',
+  },
+  {
+    step: '2',
+    icon: '📸',
+    title: 'הילד/ה משלימים ומצלמים הוכחה',
+    description: 'מסמנים שהמשימה בוצעה ומצלמים תמונה ישירות מהדפדפן — בלי להוריד אפליקציה נפרדת.',
+  },
+  {
+    step: '3',
+    icon: '🤖',
+    title: 'בדיקה חכמה בעזרת AI',
+    description: 'Claude סורק את תמונת ההוכחה ומציע ציון איכות וחוות דעת כתובה, כדי לחסוך להורה זמן בדיקה.',
+  },
+  {
+    step: '4',
+    icon: '✅',
+    title: 'אישור סופי וזיכוי מטבעות',
+    description: 'ההורה תמיד מקבל את ההחלטה האחרונה — לאשר, לתקן ציון או לדחות בחזרה עם הערה. המטבעות מזוכים רק אחרי אישור בפועל.',
+  },
+];
+
+const FAQ_ITEMS: FeatureItem[] = [
+  {
+    title: 'איך עובד תהליך אישור המשימה?',
+    description:
+      'כל משימה עוברת ארבעה שלבים: ההורה יוצר אותה עם מחיר במטבעות, הילד/ה מסמנים שהיא הושלמה ומצרפים תמונת הוכחה, ה-AI סורק את התמונה ומציע ציון וחוות דעת ראשונית, וההורה מקבל את ההחלטה הסופית — לאשר, לתקן את הציון או לדחות בחזרה עם הערה מסבירה. המטבעות נכנסים לארנק של הילד/ה רק אחרי אישור הורה בפועל.',
+  },
+  {
+    title: 'מה זה "מטבעות משפחתיים" ואיך צוברים אותם?',
+    description:
+      'מטבע משפחתי הוא היחידה הפנימית של האפליקציה, וההורים קובעים כמה שווה כל משימה עבור המשפחה שלכם. כל משימה שאושרה מוסיפה מטבעות ליתרה האישית של הילד/ה, ואפשר לראות בזמן אמת כמה נצבר ולתכנן קדימה לאיזה פרס לחסוך.',
+  },
+  {
+    title: 'האם ה-AI מחליט לבד אם משימה אושרה?',
+    description:
+      'לא. ה-AI רק מנתח את תמונת ההוכחה ומציע ציון איכות וחוות דעת כתובה כדי לחסוך להורה זמן בדיקה — ההחלטה הסופית תמיד נשארת ביד ההורה, שיכול לאשר את ההמלצה, לשנות את הציון או לדחות את המשימה בחזרה לילד/ה.',
+  },
+  {
+    title: 'איך ילד/ה מתחברים לאפליקציה?',
+    description:
+      'לכל משפחה יש קוד משפחה ייחודי. הילד/ה נכנסים עם הקוד ושם המשתמש שלהם, בלי צורך באימייל או סיסמה נפרדים — מה שהופך את ההתחברות לפשוטה גם לילדים צעירים.',
+  },
+  {
+    title: 'מה קורה אם משימה נדחתה?',
+    description:
+      'ההורה יכול לדחות משימה עם הערה שמסבירה מה חסר, והיא חוזרת לרשימת המשימות הפתוחות של הילד/ה להשלמה מחדש. שום מטבע לא מוענק עד לאישור בפועל.',
+  },
+  {
+    title: 'איך הופכים מטבעות לפרס אמיתי?',
+    description:
+      'בחנות הפרסים שההורים בונים ומתמחרים בעצמם, הילד/ה בוחרים פרס שהיתרה שלהם מכסה ושולחים בקשת מימוש — מפינוק קטן ומיידי ועד פרס גדול שדורש חיסכון ממושך.',
+  },
+  {
+    title: 'האם אפשר יותר מהורה אחד באותה משפחה?',
+    description:
+      'כן. אפשר להזמין הורה נוסף (למשל בן/בת זוג) לאותה משפחה דרך קישור הזמנה ייעודי, ולשני ההורים תהיה גישה מלאה לניהול המשימות, האישורים וחנות הפרסים המשותפת.',
+  },
+  {
+    title: 'האם האפליקציה בחינם?',
+    description:
+      'יש מסלול חינמי מלא שמאפשר להתחיל מיד בלי כרטיס אשראי, ומסלול פרימיום בתשלום עם יכולות מורחבות למשפחות גדולות יותר — פירוט מלא בטבלת ההשוואה למטה.',
+  },
+];
+
+/**
+ * Stylized "app window" frame used to give anonymous visitors a clear sense
+ * of what the actual dashboards look like before signing up. Illustrative —
+ * built from CSS/emoji, not real product screenshots (no authenticated
+ * capture pipeline exists yet) — but placed exactly where a real screenshot
+ * would go so it can be swapped in later without restructuring the page.
+ */
+function MockupFrame({ label, children }: { label: string; children: React.ReactNode }): React.ReactNode {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 border-b border-slate-800">
+        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/70" />
+        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" />
+        <span className="mr-2 text-[11px] text-slate-500 font-bold truncate">{label}</span>
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </div>
+  );
+}
+
+function TaskLifecycleMockup(): React.ReactNode {
+  return (
+    <MockupFrame label="ממשימה לפרס — שלב אחר שלב">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {TASK_LIFECYCLE.map((item) => (
+          <div key={item.step} className="flex flex-col items-center gap-1.5 text-center">
+            <span className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-sm font-black">
+              {item.step}
+            </span>
+            <span className="text-xl">{item.icon}</span>
+            <span className="text-slate-300 text-[10px] font-bold leading-tight">{item.title}</span>
+          </div>
+        ))}
+      </div>
+    </MockupFrame>
+  );
+}
+
+function ParentDashboardMockup(): React.ReactNode {
+  const rows: { child: string; task: string; price: string; status: string; color: string }[] = [
+    { child: 'נועה', task: 'סידור החדר', price: '15 🪙', status: 'ממתין לאישור', color: 'text-amber-400' },
+    { child: 'איתן', task: 'שטיפת כלים', price: '10 🪙', status: 'אושר ✓', color: 'text-emerald-400' },
+    { child: 'נועה', task: 'הכנת שיעורי בית', price: '20 🪙', status: 'בתהליך', color: 'text-slate-400' },
+  ];
+  return (
+    <MockupFrame label="לוח בקרה — הורים">
+      <div className="flex flex-col gap-2">
+        {rows.map((row) => (
+          <div
+            key={row.task}
+            className="flex items-center justify-between gap-3 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-xs font-black shrink-0">
+                {row.child[0]}
+              </span>
+              <div className="min-w-0">
+                <p className="text-white text-xs font-bold truncate">{row.task}</p>
+                <p className="text-slate-500 text-[10px]">{row.child}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-slate-300 text-xs font-bold">{row.price}</span>
+              <span className={`text-[10px] font-bold ${row.color}`}>{row.status}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </MockupFrame>
+  );
+}
+
+function ChildDashboardMockup(): React.ReactNode {
+  const tasks: { label: string; icon: string }[] = [
+    { label: 'האכלת הכלב', icon: '☐' },
+    { label: 'קיפול כביסה', icon: '☐' },
+    { label: 'צילום הוכחה — שטיפת רצפה', icon: '📸' },
+  ];
+  return (
+    <MockupFrame label="לוח בקרה — ילדים">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between bg-gradient-to-l from-indigo-500/20 to-violet-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
+          <span className="text-white font-black text-sm">היתרה שלי</span>
+          <span className="text-amber-300 font-black text-lg">142 🪙</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {tasks.map((task) => (
+            <div
+              key={task.label}
+              className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2"
+            >
+              <span className="text-base shrink-0">{task.icon}</span>
+              <span className="text-slate-200 text-xs font-bold">{task.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </MockupFrame>
+  );
+}
+
+function RewardsStoreMockup(): React.ReactNode {
+  const items: { icon: string; name: string; price: string }[] = [
+    { icon: '🍨', name: 'גלידה משפחתית', price: '25 🪙' },
+    { icon: '🎮', name: 'שעת מסך נוספת', price: '15 🪙' },
+    { icon: '🧸', name: 'צעצוע נחשק', price: '180 🪙' },
+  ];
+  return (
+    <MockupFrame label="חנות הפרסים">
+      <div className="grid grid-cols-3 gap-2">
+        {items.map((item) => (
+          <div
+            key={item.name}
+            className="flex flex-col items-center gap-1.5 bg-slate-950/60 border border-slate-800 rounded-xl px-2 py-3 text-center"
+          >
+            <span className="text-2xl">{item.icon}</span>
+            <span className="text-slate-200 text-[10px] font-bold leading-tight">{item.name}</span>
+            <span className="text-amber-300 text-[10px] font-black">{item.price}</span>
+          </div>
+        ))}
+      </div>
+    </MockupFrame>
   );
 }
 
@@ -260,32 +473,64 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
           </div>
         </section>
 
+        {/* איך זה עובד — מעגל החיים המלא של משימה, מיצירה ועד זיכוי מטבעות */}
+        <section>
+          <SectionHeading eyebrow="⚙️ איך זה עובד" title="ניהול משימות — ממשימה לפרס, שלב אחר שלב" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+            <div className="flex flex-col gap-3">
+              {TASK_LIFECYCLE.map((item) => (
+                <div key={item.step} className="flex items-start gap-3 bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+                  <span className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-sm font-black shrink-0">
+                    {item.step}
+                  </span>
+                  <div>
+                    <p className="text-white font-bold text-sm flex items-center gap-2">
+                      <span>{item.icon}</span> {item.title}
+                    </p>
+                    <p className="text-slate-400 text-xs sm:text-sm leading-relaxed mt-1">{item.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <TaskLifecycleMockup />
+          </div>
+        </section>
+
         {/* דשבורד ההורים ופיצ'רים */}
         <section>
           <SectionHeading eyebrow="👩‍🦰 מרכז הבקרה" title="דשבורד ההורים" />
-          <FeatureAccordion items={PARENT_FEATURES} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <FeatureAccordion items={PARENT_FEATURES} />
+            <ParentDashboardMockup />
+          </div>
         </section>
 
         {/* דשבורד הילדים ופיצ'רים */}
         <section>
           <SectionHeading eyebrow="👦 חוויית הילד" title="דשבורד הצ׳אמפ" />
-          <FeatureAccordion items={CHILD_FEATURES} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <FeatureAccordion items={CHILD_FEATURES} />
+            <ChildDashboardMockup />
+          </div>
         </section>
 
         {/* חנות הפרסים והקטגוריות */}
         <section>
           <SectionHeading eyebrow="🎁 חנות הפרסים" title="3 סוגי פרסים שמשמרים מוטיבציה לאורך זמן" />
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {REWARD_TIERS.map((tier) => (
-              <div
-                key={tier.title}
-                className="flex flex-col gap-3 bg-slate-900/50 border border-slate-800 rounded-2xl p-5"
-              >
-                <span className="text-3xl">{tier.icon}</span>
-                <h3 className="text-white font-black text-base">{tier.title}</h3>
-                <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">{tier.description}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <div className="flex flex-col gap-4">
+              {REWARD_TIERS.map((tier) => (
+                <div
+                  key={tier.title}
+                  className="flex flex-col gap-3 bg-slate-900/50 border border-slate-800 rounded-2xl p-5"
+                >
+                  <span className="text-3xl">{tier.icon}</span>
+                  <h3 className="text-white font-black text-base">{tier.title}</h3>
+                  <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">{tier.description}</p>
+                </div>
+              ))}
+            </div>
+            <RewardsStoreMockup />
           </div>
         </section>
 
@@ -333,6 +578,12 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             </div>
           </section>
         )}
+
+        {/* שאלות נפוצות */}
+        <section>
+          <SectionHeading eyebrow="❓ שאלות נפוצות" title="כל מה שרציתם לדעת על ChoreChamps" />
+          <FeatureAccordion items={FAQ_ITEMS} defaultOpenIndex={null} />
+        </section>
       </main>
 
       {!isModal && (
