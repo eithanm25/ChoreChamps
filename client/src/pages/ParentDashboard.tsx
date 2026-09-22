@@ -11,6 +11,7 @@ import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { FamilyInfo } from '../types/family';
 import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
+import type { TaskFrequency } from '../types/task';
 import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
 import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
 import AvatarBadge from '../components/AvatarBadge';
@@ -59,7 +60,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ title: '', description: '', basePrice: '', maxBonusPrice: '' , assignedToId: '', useAiReview: true });
+  const [taskForm, setTaskForm] = useState({
+    title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true,
+    isRecurring: false, frequency: 'daily' as TaskFrequency,
+  });
   const [taskLoading, setTaskLoading] = useState(false);
   // מסלול המנוי ומכסת בדיקות ה-AI — נטענים מ-/api/family/me ומשפיעים על טופס פרסום המשימה למטה
   const [familyInfo, setFamilyInfo] = useState<FamilyInfo | null>(null);
@@ -162,6 +166,14 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
 
   const toggleUseAiReview = () => {
     setTaskForm(prev => ({ ...prev, useAiReview: !prev.useAiReview }));
+  };
+
+  const toggleIsRecurring = () => {
+    setTaskForm(prev => ({ ...prev, isRecurring: !prev.isRecurring }));
+  };
+
+  const handleFrequencyChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setTaskForm(prev => ({ ...prev, frequency: e.target.value as TaskFrequency }));
   };
 
   // הוספת ילד/ה חדש/ה למשפחה (הורים נוספים מצטרפים רק דרך הזמנת Google — ראו למטה)
@@ -273,6 +285,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
         formData.append('referencePhoto', file);
       });
       formData.append('useAiReview', String(taskForm.useAiReview));
+      formData.append('isRecurring', String(taskForm.isRecurring));
+      if (taskForm.isRecurring) {
+        formData.append('frequency', taskForm.frequency);
+      }
 
       const response = await api.post('/api/tasks', formData);
 
@@ -288,7 +304,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
       }
 
       // איפוס הטופס ורענון רשימת המשפחה (כדי לעדכן את כמות המשימות שההורה העלה)
-      setTaskForm({ title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true });
+      setTaskForm({
+        title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true,
+        isRecurring: false, frequency: 'daily',
+      });
       clearReferencePhotos();
       setMembers(prevMembers =>
         prevMembers.map(member =>
@@ -721,6 +740,44 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                             <option key={child.id} value={child.id}>👦 {child.name}</option>
                           ))}
                       </select>
+                    </div>
+
+                    {/* 🔁 משימה מחזורית — יוצרת אוטומטית מופע חדש וזהה כל יום/שבוע/חודש */}
+                    <div className={`flex flex-col gap-2 p-3 rounded-xl border transition-all ${
+                      taskForm.isRecurring ? 'bg-indigo-950/20 border-indigo-500/30' : 'bg-slate-800/40 border-slate-700/50'
+                    }`}>
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={taskForm.isRecurring}
+                          onChange={toggleIsRecurring}
+                          disabled={taskLoading}
+                          className="w-4 h-4 rounded accent-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-slate-200 text-sm font-bold flex items-center gap-1">
+                          <span>🔁</span> משימה מחזורית?
+                        </span>
+                      </label>
+
+                      {taskForm.isRecurring && (
+                        <div className="flex flex-col gap-1 pr-6">
+                          <label className="text-slate-400 text-[11px] font-medium">כל כמה זמן ליצור משימה חדשה?</label>
+                          <select
+                            name="frequency"
+                            value={taskForm.frequency}
+                            onChange={handleFrequencyChange}
+                            className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm font-medium"
+                            disabled={taskLoading}
+                          >
+                            <option value="daily">☀️ כל יום</option>
+                            <option value="weekly">📅 כל שבוע</option>
+                            <option value="monthly">🗓️ כל חודש</option>
+                          </select>
+                          <p className="text-slate-500 text-[11px] leading-relaxed mt-0.5">
+                            משימה חדשה וזהה תיווצר אוטומטית במחזור הבא, כל עוד המשימה הזו עדיין קיימת בלוח.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* תמונות/קבצי ייחוס אופציונליים — דף עבודה/מבחן ריק, או תקן ניקיון לדוגמה */}

@@ -8,6 +8,7 @@ import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
 import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { SubscriptionTier } from '../types/family';
+import { FREQUENCY_LABELS, type TaskFrequency } from '../types/task';
 
 // הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
 interface AiSummaryJson {
@@ -38,6 +39,9 @@ export interface Task {
   /** Blank worksheet/test, or "golden standard" chore example — empty once approved (files are deleted then). */
   referencePhotoUrls: string[];
   submission?: Submission | null;
+  /** Recurring-task template metadata — frequency is null unless isRecurring is true. */
+  isRecurring?: boolean;
+  frequency?: TaskFrequency | null;
 }
 
 interface FamilyMember {
@@ -445,7 +449,17 @@ export default function ParentTasksList({ tasks, setTasks, familyTier, familyId 
                     <div className="flex flex-col gap-2">
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex flex-col gap-0.5">
-                          <h3 className="font-bold text-white text-base airy-headline leading-tight">{task.title}</h3>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="font-bold text-white text-base airy-headline leading-tight">{task.title}</h3>
+                            {task.isRecurring && task.frequency && (
+                              <span
+                                title={`משימה מחזורית — יוצרת מופע חדש ${FREQUENCY_LABELS[task.frequency]}`}
+                                className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-violet-500/10 text-violet-300 border border-violet-500/20"
+                              >
+                                🔁 {FREQUENCY_LABELS[task.frequency]}
+                              </span>
+                            )}
+                          </div>
                           {task.createdBy && (
                             <span className="text-[10px] text-slate-400 font-medium">
                               👑 פורסם על ידי: <span className="text-slate-300 font-semibold">{task.createdBy.name}</span>

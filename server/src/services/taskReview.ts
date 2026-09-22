@@ -174,7 +174,13 @@ export async function runReview(
   // Approval closes out the task's learning/comparison cycle for good, so the
   // parent's reference photo(s) are cleaned up here too, alongside the child's
   // submission photos — nothing is left to compare against anymore.
-  const photoUrls = [...submissionPhotoUrls, ...(task.referencePhotoUrls ?? [])];
+  //
+  // Exception: a recurring template (isRecurring) never really "closes" —
+  // generateDueRecurringTasks keeps cloning this exact row's
+  // referencePhotoUrls into every future occurrence, regardless of whether
+  // this particular occurrence gets approved. Deleting the R2 objects here
+  // would leave every later clone pointing at dangling keys.
+  const photoUrls = [...submissionPhotoUrls, ...(task.isRecurring ? [] : task.referencePhotoUrls ?? [])];
 
   return {
     ok: true,

@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { AppDataSource } from '../data-source';
-import { Task, TaskStatus } from '../entities/Task';
+import { Task, TaskStatus, TaskFrequency } from '../entities/Task';
 import { Submission, AiReview } from '../entities/Submission';
 import { ChildProfile } from '../entities/ChildProfile';
 import { UserRole, User } from '../entities/User';
@@ -29,6 +29,7 @@ import {
 import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import { notifyTaskApproved, notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
 import { broadcastFamilyUpdate } from '../services/realtime';
+import { generateDueRecurringTasks } from '../services/recurringTasks';
 import {
   FREE_TIER_AI_LIMIT,
   MAX_DAILY_SUBMISSIONS_PER_FAMILY,
@@ -195,7 +196,7 @@ router.post(
   requireParent,
   handleReferencePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { title, description, basePrice, maxBonusPrice, assignedToId, useAiReview } = req.body as {
+    const { title, description, basePrice, maxBonusPrice, assignedToId, useAiReview, isRecurring, frequency } = req.body as {
       title?: string;
       description?: string;
       basePrice?: unknown;
@@ -203,6 +204,10 @@ router.post(
       assignedToId?: string | null; // חילוץ השדה החדש מהבקשה
       /** Parent's AI-review checkbox. Arrives as a real boolean from JSON, or 'true'/'false' string from multipart form fields. Defaults to true (opted in) when omitted. */
       useAiReview?: unknown;
+      /** "משימה מחזורית?" checkbox — same boolean-or-string-boolean shape as useAiReview. */
+      isRecurring?: unknown;
+      /** Required, and validated against TaskFrequency, only when isRecurring is truthy. */
+      frequency?: unknown;
     };
 
     if (!title || typeof title !== 'string') {
@@ -225,6 +230,19 @@ router.post(
     if (parsedBasePrice <= 0 || parsedMaxBonusPrice < 0) {
       res.status(400).json({ error: 'basePrice must be greater than 0, and maxBonusPrice cannot be negative' });
       return;
+    }
+
+    // Same boolean-or-string-boolean parsing as parseAiReviewFlag, but opt-in
+    // (missing/false-ish defaults to false) rather than opt-out.
+    const wantsRecurring = isRecurring === true || isRecurring === 'true';
+    let taskFrequency: TaskFrequency | null = null;
+    if (wantsRecurring) {
+      const validFrequencies: string[] = Object.values(TaskFrequency);
+      if (typeof frequency !== 'string' || !validFrequencies.includes(frequency)) {
+        res.status(400).json({ error: 'תדירות המשימה המחזורית חייבת להיות "כל יום", "כל שבוע" או "כל חודש"' });
+        return;
+      }
+      taskFrequency = frequency as TaskFrequency;
     }
 
     const parent = req.user!;
@@ -295,6 +313,8 @@ router.post(
       assignedTo: assignedChild,
       referencePhotoUrls: referenceKeys.length > 0 ? referenceKeys : null,
       useAiReview: parseAiReviewFlag(useAiReview),
+      isRecurring: wantsRecurring,
+      frequency: taskFrequency,
     });
 
     await taskRepo.save(task);
@@ -334,6 +354,12 @@ router.get('/open', requireAuth, async (req: AuthenticatedRequest, res: Response
 /**
  * GET /api/tasks/family-tasks
  * Returns all tasks for the logged-in user's family, with relations for UI grouping.
+ *
+ * Lazy-evaluation trigger for recurring chores lives here: before reading the
+ * board, any due recurring template generates its next occurrence inline (see
+ * generateDueRecurringTasks) — no cron runner, no queue, just "generate on the
+ * next read if it's due" — so a freshly-spawned occurrence is already in the
+ * very same response that noticed it was due.
  */
 router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
@@ -341,6 +367,8 @@ router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: 
     res.status(400).json({ error: 'You must belong to a family to view tasks' });
     return;
   }
+
+  await generateDueRecurringTasks(user.family.id);
 
   const taskRepo = AppDataSource.getRepository(Task);
   const tasks = await taskRepo.find({

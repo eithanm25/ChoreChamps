@@ -19,6 +19,12 @@ export enum TaskStatus {
   APPROVED = 'approved',
 }
 
+export enum TaskFrequency {
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+}
+
 /**
  * A chore created by a parent for a family.
  *
@@ -92,6 +98,26 @@ export class Task {
 
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.OPEN })
   status!: TaskStatus;
+
+  /**
+   * Recurring-task template flag. A recurring task is a normal, completable
+   * task that ALSO keeps producing fresh, independent occurrences of itself
+   * every `frequency` interval — see generateDueRecurringTasks, triggered
+   * lazily from GET /api/tasks/family-tasks rather than a cron job. The
+   * template row is never consumed or deleted by generation; only its
+   * `lastGeneratedAt` stamp advances. Each generated occurrence is a plain
+   * one-off task (isRecurring: false) so clones never themselves recurse.
+   */
+  @Column({ type: 'boolean', default: false })
+  isRecurring!: boolean;
+
+  /** Recurrence cadence — meaningful only when isRecurring is true. */
+  @Column({ type: 'enum', enum: TaskFrequency, nullable: true })
+  frequency!: TaskFrequency | null;
+
+  /** When this template last spawned an occurrence (null = never yet). */
+  @Column({ type: 'timestamp', nullable: true })
+  lastGeneratedAt!: Date | null;
 
   /** The household this chore belongs to. */
   @ManyToOne(() => Family, (family) => family.tasks)

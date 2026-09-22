@@ -40,6 +40,9 @@ export interface TaskDto {
   createdAt: Date;
   assignedTo: PublicMember | null;
   createdBy: PublicMember | null;
+  /** Recurring-task template metadata — see generateDueRecurringTasks. frequency is null unless isRecurring is true. */
+  isRecurring: boolean;
+  frequency: Task['frequency'];
   /**
    * The parent's reference/target photo(s) or PDF, if the task has any —
    * empty once the task is approved, since the files are deleted at that
@@ -71,6 +74,8 @@ export function toTaskDto(task: Task): TaskDto {
     createdAt: task.createdAt,
     assignedTo: toPublicMember(task.assignedTo),
     createdBy: toPublicMember(task.createdBy),
+    isRecurring: task.isRecurring,
+    frequency: task.frequency,
     referencePhotoUrls:
       task.status !== TaskStatus.APPROVED && task.referencePhotoUrls
         ? task.referencePhotoUrls.map(toPublicPhotoUrl)
