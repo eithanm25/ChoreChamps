@@ -620,7 +620,7 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
               </a>
             </div>
             <p className="text-slate-600 text-[11px]">
-              © {new Date().getFullYear()} ChoreChamps. כל הזכויות שמורות. מופעל על ידי Alex Markov.
+              © {new Date().getFullYear()} ChoreChamps. כל הזכויות שמורות.
             </p>
           </div>
         </footer>

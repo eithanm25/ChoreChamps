@@ -117,7 +117,7 @@ export default function LegalDocumentLayout({
             </a>
           </p>
           <p className="text-slate-600 text-[11px]">
-            © {new Date().getFullYear()} ChoreChamps — {isHebrew ? 'מופעל על ידי' : 'Operated by'} Alex Markov.
+            © {new Date().getFullYear()} ChoreChamps.
           </p>
         </div>
       </main>

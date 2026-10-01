@@ -40,9 +40,18 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // rememberedFamilyCode/rememberedUsername are shown as a *placeholder*
+  // hint below (not pre-filled as a real value): a real pre-filled value
+  // renders identical to text the user typed themselves, so retyping over
+  // it means selecting and erasing it first instead of just typing — the
+  // exact "placeholder became real text I had to erase" bug. A true
+  // placeholder clears itself the instant you type, on every device.
+  // prefilledFamilyCode/prefilledUsername (from an invite link's ?family=
+  // &username=) stay as a real value on purpose — that IS the point of the
+  // link, letting the child skip typing entirely.
   const [familyForm, setFamilyForm] = useState({
-    familyCode: prefilledFamilyCode || rememberedFamilyCode,
-    username: prefilledUsername || rememberedUsername,
+    familyCode: prefilledFamilyCode,
+    username: prefilledUsername,
     password: '',
   });
   const [parentForm, setParentForm] = useState({ email: '', password: '' });
@@ -183,7 +192,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                   value={familyForm.familyCode}
                   onChange={handleFamilyChange}
                   className="w-full px-4 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-left font-mono tracking-widest text-lg"
-                  placeholder="830715"
+                  placeholder={rememberedFamilyCode || '830715'}
                   inputMode="numeric"
                   maxLength={6}
                   required
@@ -199,7 +208,7 @@ export default function Login({ onAuth }: LoginProps): React.ReactNode {
                   value={familyForm.username}
                   onChange={handleFamilyChange}
                   className="w-full px-4 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                  placeholder="לדוגמה: נועם"
+                  placeholder={rememberedUsername || 'לדוגמה: נועם'}
                   required
                   disabled={loading}
                 />

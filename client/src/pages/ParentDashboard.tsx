@@ -786,7 +786,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                         📎 תמונות ייחוס למשימה (אופציונלי, עד {maxReferencePhotos})
                       </label>
                       <p className="text-slate-500 text-[11px] leading-relaxed mb-1">
-                        הילד/ה יראו כל תמונה או קובץ שתעלו כאן, להמחשה בלבד — ה-AI ישווה את מה שהם ישלחו מולו.
+                        הילד/ה יראו כל תמונה או קובץ שתעלו כאן, להמחשה בלבד.
+                      </p>
+                      <p className="text-amber-400/90 text-[11px] leading-relaxed mb-1">
+                        ⚠️ ה-AI ישווה את התמונה הזו למה שהילד/ה ישלחו רק אם תשאירו את תיבת "בדיקת AI אוטומטית" למטה מסומנת — בלי זה, התמונה תוצג לילד/ה להמחשה בלבד, בלי השוואה אוטומטית.
                       </p>
 
                       {referencePhotos.length < maxReferencePhotos && (
@@ -862,7 +865,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                   <div className="flex flex-col gap-4 justify-between">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1">
-                        <label className="text-slate-200 text-sm font-medium">💰 מחיר בסיס (₪)</label>
+                        <label className="text-slate-200 text-sm font-medium">💰 מחיר בסיס (מטבעות)</label>
                         <input
                           type="number"
                           name="basePrice"
@@ -877,7 +880,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-slate-200 text-sm font-medium">✨ בונוס גג (₪)</label>
+                        <label className="text-slate-200 text-sm font-medium">✨ בונוס גג (מטבעות)</label>
                         <input
                           type="number"
                           name="maxBonusPrice"
