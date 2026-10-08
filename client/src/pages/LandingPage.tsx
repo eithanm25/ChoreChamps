@@ -617,10 +617,6 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
               נסו בחינם 🚀
             </Link>
             <div className="flex items-center gap-4 mt-6 text-[11px] flex-wrap justify-center">
-              <Link to="/guides" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
-                מדריכים להורים
-              </Link>
-              <span className="text-slate-700">•</span>
               <Link to="/terms" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
                 תנאי שימוש
               </Link>
