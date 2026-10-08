@@ -401,12 +401,20 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             <span className="flex items-center gap-2 font-black text-white text-lg">
               <span>🏆</span> ChoreChamps
             </span>
-            <Link
-              to="/login"
-              className="px-5 py-2 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-100 text-sm font-bold transition-all"
-            >
-              התחברות
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                to="/guides"
+                className="hidden sm:inline text-slate-400 hover:text-slate-200 text-sm font-bold transition-colors"
+              >
+                מדריכים להורים
+              </Link>
+              <Link
+                to="/login"
+                className="px-5 py-2 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-100 text-sm font-bold transition-all"
+              >
+                התחברות
+              </Link>
+            </div>
           </div>
         </header>
       )}
@@ -600,6 +608,10 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
               נסו בחינם 🚀
             </Link>
             <div className="flex items-center gap-4 mt-6 text-[11px] flex-wrap justify-center">
+              <Link to="/guides" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
+                מדריכים להורים
+              </Link>
+              <span className="text-slate-700">•</span>
               <Link to="/terms" className="text-slate-500 hover:text-slate-300 font-medium transition-colors">
                 תנאי שימוש
               </Link>

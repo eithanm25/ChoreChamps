@@ -10,6 +10,8 @@ import LandingPage from './pages/LandingPage';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import RefundPolicy from './pages/RefundPolicy';
+import GuidesIndex from './pages/GuidesIndex';
+import GuideArticle from './pages/GuideArticle';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
 import AdsManager from './components/AdsManager';
@@ -302,6 +304,10 @@ export default function App(): React.ReactNode {
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
+
+        {/* מדריכים עצמאיים להורים — תוכן אמיתי ועצמאי, לא תלוי הרשמה (ראו data/guides.ts) */}
+        <Route path="/guides" element={<GuidesIndex />} />
+        <Route path="/guides/:slug" element={<GuideArticle />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

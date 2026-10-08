@@ -98,6 +98,10 @@ export default function LegalDocumentLayout({
 
         <div className="flex flex-col gap-3 border-t border-slate-800 pt-6">
           <nav className="flex items-center gap-3 text-xs flex-wrap">
+            <Link to="/guides" className="text-slate-400 hover:text-slate-200 font-medium transition-colors">
+              {isHebrew ? 'מדריכים להורים' : 'Parenting Guides'}
+            </Link>
+            <span className="text-slate-700">•</span>
             <Link to="/terms" className="text-slate-400 hover:text-slate-200 font-medium transition-colors">
               {isHebrew ? 'תנאי שימוש' : 'Terms of Service'}
             </Link>
