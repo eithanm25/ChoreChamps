@@ -404,7 +404,7 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             <div className="flex items-center gap-4">
               <Link
                 to="/guides"
-                className="hidden sm:inline text-slate-400 hover:text-slate-200 text-sm font-bold transition-colors"
+                className="text-slate-400 hover:text-slate-200 text-xs sm:text-sm font-bold transition-colors whitespace-nowrap"
               >
                 מדריכים להורים
               </Link>
