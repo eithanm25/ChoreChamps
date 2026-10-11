@@ -445,7 +445,7 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
             <div className="flex flex-col gap-4 text-slate-300 text-sm sm:text-base leading-relaxed">
               <p>
                 ChoreChamps נולד מתוך הבנה פשוטה: מטלות בית לא צריכות להיות מקור לחיכוך יומיומי. כשהופכים אותן
-                למשחק — עם משימות ברורות, תגמול הוגן, וחנות פרסים שהילדים בעצמם בונים איתכם — הבקשה החוזרת
+                למשחק — עם משימות ברורות, תגמול הוגן, וחנות פרסים — הבקשה החוזרת
                 הופכת לאתגר שכיף לנצח בו.
               </p>
               <p>
