@@ -10,17 +10,14 @@ import LandingPage from './pages/LandingPage';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import RefundPolicy from './pages/RefundPolicy';
-import GuidesIndex from './pages/GuidesIndex';
-import GuideArticle from './pages/GuideArticle';
 import SplashScreen from './components/SplashScreen';
 import InstallPwaPrompt from './components/InstallPwaPrompt';
-import AdsManager from './components/AdsManager';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
 
 // Code-split on purpose: these three are by far the heaviest bundles (task
 // management, reward store, wallet panels, camera capture, the Paddle/
 // OneSignal/Supabase-realtime wiring) and are only ever reached *after*
-// login — a crawler (Google, AdSense) never sees them, so a lazy chunk's
+// login — a crawler (Google) never sees them, so a lazy chunk's
 // brief real network-fetch delay can never be mistaken for "no content."
 // LandingPage/Login/AuthPage/the legal pages stay as regular eager imports
 // above for exactly that reason: those are the pages a crawler does land
@@ -103,7 +100,7 @@ export default function App(): React.ReactNode {
   // תפקיד אמיתי: להסתיר את החלון הקצר שבו מאמתים את הטוקן מול השרת, כדי שלא
   // יהיה הבזק של תוכן מוגן ואז בעיטה החוצה אם הוא כבר לא תקף. למבקר אנונימי
   // (בלי טוקן) אין שום בדיקה אסינכרונית שרצה ברקע — ה-splash שם היה קוסמטי
-  // בלבד, ומעל הכל, חוסם לגמרי סורקים (AdSense/Google) מלראות תוכן אמיתי
+  // בלבד, ומעל הכל, חוסם לגמרי סורקים (Google) מלראות תוכן אמיתי
   // בטעינה הראשונה. ראו App.tsx#L96 — האפקט שמאמת את הטוקן רץ רק if (token).
   const [showSplash, setShowSplash] = useState(() => !!token);
   // אין טוקן לבדוק מלכתחילה -> אין מה לאמת, "הבדיקה" נחשבת גמורה כבר מההתחלה.
@@ -179,15 +176,6 @@ export default function App(): React.ReactNode {
 
 
   return (
-    // AdsManager is the outermost wrapper on purpose — it must mount (and
-    // inject the AdSense loader script) on the very first render of every
-    // route, logged in or not, for Google's own site-verification crawler
-    // to see it on an anonymous "/" load. No prop passed -> isPremium is
-    // undefined -> never blocked here; App.tsx has no reliable tier info
-    // (that's only known inside a dashboard, once its own family info
-    // loads), so the global instance always injects. It never blocks
-    // rendering either way; see its own docstring.
-    <AdsManager>
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} locale="iw">
     {/* הראוטר תמיד מרונדר — כדי שברגע שמסך הפתיחה נעלם לא יהיה שום הבזק של
         תוכן לא מוכן מתחתיו, היעד הנכון כבר מצויר שם מהרגע הראשון. */}
@@ -305,15 +293,10 @@ export default function App(): React.ReactNode {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
 
-        {/* מדריכים עצמאיים להורים — תוכן אמיתי ועצמאי, לא תלוי הרשמה (ראו data/guides.ts) */}
-        <Route path="/guides" element={<GuidesIndex />} />
-        <Route path="/guides/:slug" element={<GuideArticle />} />
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>
     </BrowserRouter>
     </GoogleOAuthProvider>
-    </AdsManager>
   );
 }

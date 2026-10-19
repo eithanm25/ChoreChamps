@@ -24,7 +24,6 @@ import RouteLoadingFallback from '../components/RouteLoadingFallback';
 // "upgrade" — never on initial load, never for a crawler.
 const SubscriptionPage = lazy(() => import('./SubscriptionPage'));
 import { registerForPushNotifications } from '../services/oneSignal';
-import BannerAd from '../components/BannerAd';
 
 interface DashboardProps {
   user: SafeUser; // נשתמש בו כעת בתוך הכותרת כדי לפתור את שגיאת ה-ESLint!
@@ -936,12 +935,6 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
             }}
           />
         )}
-
-        {/* 📢 מודעת AdSense — הסקריפט הגלובלי נטען עבור כולם ב-App.tsx (כדי
-            שסריקת האימות של Google תעבור גם על מבקרים לא מחוברים); כרטיס
-            המודעה עצמו מוצג רק למשפחות במסלול חינמי, בתחתית הדשבורד */}
-        {familyTier === 'free' && <BannerAd />}
-
       </div>
     </div>
   );

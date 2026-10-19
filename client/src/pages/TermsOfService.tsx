@@ -35,7 +35,7 @@ const SECTIONS_HE: LegalSection[] = [
   {
     heading: 'מסלול חינמי ומסלול פרימיום',
     body: [
-      'ChoreChamps מציעה מסלול חינמי (FREE) הכולל מספר מוגבל של בדיקות איכות מבוססות בינה מלאכותית, מכסת תמונות הוכחה/ייחוס למשימה, ארנק ChoreCoins מלא (העברות בין הורה לילד/ה ובין אחים) וכולל פרסומות. מסלול מנוי אחד בתשלום — Champ Premium — פותח חוויה נקייה לחלוטין מפרסומות, בדיקות AI ללא הגבלה, יותר תמונות ייחוס והוכחה למשימה, העלאת קבצי PDF ונפח אחסון מורחב לתמונות ייחוס. Premium נמכר בשתי תדירויות חיוב לבחירתך: 29.90 ₪ לחודש, או 280 ₪ לשנה (המסלול השנתי חוסך כ-22% בסך הכל, כ-6.6 ₪ פחות בכל חודש בהשוואה לתשלום החודשי). התמחור המלא והעדכני מוצג תמיד בממשק האפליקציה.',
+      'ChoreChamps מציעה מסלול חינמי (FREE) הכולל מספר מוגבל של בדיקות איכות מבוססות בינה מלאכותית, מכסת תמונות הוכחה/ייחוס למשימה, וארנק ChoreCoins מלא (העברות בין הורה לילד/ה ובין אחים). מסלול מנוי אחד בתשלום — Champ Premium — פותח בדיקות AI ללא הגבלה, יותר תמונות ייחוס והוכחה למשימה, העלאת קבצי PDF ונפח אחסון מורחב לתמונות ייחוס. Premium נמכר בשתי תדירויות חיוב לבחירתך: 29.90 ₪ לחודש, או 280 ₪ לשנה (המסלול השנתי חוסך כ-22% בסך הכל, כ-6.6 ₪ פחות בכל חודש בהשוואה לתשלום החודשי). התמחור המלא והעדכני מוצג תמיד בממשק האפליקציה.',
     ],
   },
   {
@@ -94,7 +94,7 @@ const SECTIONS_EN: LegalSection[] = [
   {
     heading: 'Free and Premium Plans',
     body: [
-      'ChoreChamps offers a free (FREE) plan that includes a limited number of AI-based quality checks, a capped number of proof/reference photos per task, a full ChoreCoins wallet (transfers between parent and child, and between siblings), and ads. One paid plan — Champ Premium — unlocks a completely ad-free experience, unlimited AI checks, more reference and proof photos per task, PDF file uploads, and expanded reference-photo storage. Premium is sold at two billing frequencies: ₪29.90/month, or ₪280/year (the annual plan saves about 22% overall — roughly ₪6.6 less per month than paying monthly). Full, current pricing is always shown in the app interface.',
+      'ChoreChamps offers a free (FREE) plan that includes a limited number of AI-based quality checks, a capped number of proof/reference photos per task, and a full ChoreCoins wallet (transfers between parent and child, and between siblings). One paid plan — Champ Premium — unlocks unlimited AI checks, more reference and proof photos per task, PDF file uploads, and expanded reference-photo storage. Premium is sold at two billing frequencies: ₪29.90/month, or ₪280/year (the annual plan saves about 22% overall — roughly ₪6.6 less per month than paying monthly). Full, current pricing is always shown in the app interface.',
     ],
   },
   {

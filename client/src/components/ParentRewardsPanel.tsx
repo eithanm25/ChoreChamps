@@ -12,7 +12,6 @@ import { searchCatalogItems, type MarketplaceCatalogItem, type StoreName } from 
 /** Hebrew display label per store, for the "רכוש ב-X" comparison buttons. */
 const STORE_LABELS: Record<StoreName, string> = {
   ebay: 'איביי',
-  amazon: 'אמזון',
   aliexpress: 'עלי אקספרס',
   custom: 'חנות המותג',
 };

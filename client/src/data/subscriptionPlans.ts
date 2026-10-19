@@ -68,7 +68,7 @@ export const PREMIUM_ANNUAL_SAVINGS_COPY = `המסלול השנתי חוסך כ-
  */
 export interface PricingMatrixCell {
   included: boolean;
-  /** Short contrastive detail shown under the check/cross — e.g. "כולל פרסומות" vs "ללא פרסומות ✨". */
+  /** Short contrastive detail shown under the check/cross — e.g. "אישור הורים ידני ומסורבל" vs "ניתוח אוטומטי". */
   note?: string;
 }
 
@@ -100,11 +100,6 @@ export const PRICING_MATRIX_ROWS: PricingMatrixRow[] = [
     premium: { included: true },
   },
   {
-    criterion: 'חוויה חלקה ונקייה מפרסומות',
-    free: { included: false, note: 'כולל פרסומות' },
-    premium: { included: true, note: 'ללא פרסומות ✨' },
-  },
-  {
     criterion: 'עוזר אישי בינה מלאכותית (Unlimited Claude AI Assistant)',
     free: { included: false, note: 'אישור הורים ידני ומסורבל' },
     premium: { included: true, note: 'ניתוח תמונות, סיכום וציון מומלץ אוטומטי' },
@@ -126,7 +121,7 @@ export const PLANS: PlanCard[] = [
     tier: 'free',
     name: 'FREE',
     price: '0₪',
-    priceNote: 'לתמיד, עם פרסומות',
+    priceNote: 'לתמיד, בחינם',
     features: [
       '5 בדיקות AI',
       'עד תמונת ייחוס אחת להורה למשימה',
@@ -142,7 +137,6 @@ export const PLANS: PlanCard[] = [
     price: `${PREMIUM_BILLING_OPTIONS.month.priceLabel} / ${PREMIUM_BILLING_OPTIONS.year.priceLabel}`,
     priceNote: `לחודש או לשנה — ${PREMIUM_ANNUAL_SAVINGS_COPY}`,
     features: [
-      'חוויה נקייה לחלוטין — בלי פרסומות',
       'Unlimited Claude AI Assistant 🤖 — ניתוח כל תמונת הוכחה מול תמונת הייחוס, עם סיכום מפורט, אחוזי הצלחה וציון מומלץ',
       'אישור משימה בקליק אחד — ההורה שומר על שליטה מלאה בלי לבדוק פיזית',
       'העלאת קבצי PDF ענקיים — פירוק חוברות עבודה שלמות של בית הספר למטלות בשניות 📄',

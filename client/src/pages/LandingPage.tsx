@@ -471,23 +471,6 @@ export default function LandingPage({ mode = 'page', onClose }: LandingPageProps
               ))}
             </div>
           </div>
-
-          {/* קישור למדריכים להורים — מוצב ליד הפסקה על אחריות ואוריינות פיננסית, הנושאים שהמדריכים מרחיבים עליהם */}
-          <Link
-            to="/guides"
-            className="mt-4 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-l from-indigo-950/40 to-slate-900 border border-indigo-500/20 hover:border-indigo-500/50 transition-all group text-center sm:text-right"
-          >
-            <span className="text-3xl shrink-0">📚</span>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-white font-black text-sm sm:text-base">רוצים להעמיק בנושא? קראו את המדריכים שלנו להורים</h3>
-              <p className="text-slate-400 text-xs sm:text-sm leading-relaxed mt-0.5">
-                מטלות מתאימות לכל גיל, בניית מערכת דמי כיס הוגנת, ואוריינות פיננסית לילדים — בלי צורך בהרשמה.
-              </p>
-            </div>
-            <span className="shrink-0 text-indigo-400 font-bold text-xs sm:text-sm group-hover:text-indigo-300 transition-colors whitespace-nowrap">
-              לכל המדריכים ←
-            </span>
-          </Link>
         </section>
 
         {/* איך זה עובד — מעגל החיים המלא של משימה, מיצירה ועד זיכוי מטבעות */}
