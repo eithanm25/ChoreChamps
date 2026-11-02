@@ -9,6 +9,7 @@ import { WalletTransaction } from '../entities/WalletTransaction';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { deleteObjects } from '../services/storage';
 import { broadcastFamilyUpdate } from '../services/realtime';
+import { getPaddleClient } from '../services/paddle';
 
 const router = Router();
 
@@ -60,7 +61,7 @@ router.delete('/purge-account', requireAuth, async (req: AuthenticatedRequest, r
       return;
     }
 
-    await purgeFamily(user.family.id);
+    await purgeFamily(user.family);
     res.json({ message: 'החשבון וכל נתוני המשפחה נמחקו לצמיתות' });
   } catch (err) {
     console.error('[users/purge-account] failed:', err);
@@ -102,8 +103,36 @@ async function releaseChildTasks(childId: string): Promise<void> {
  * family row itself. R2 proof/reference photo keys are collected before the
  * transaction and purged from storage afterward — best-effort, matching
  * every other call site of deleteObjects in this codebase.
+ *
+ * If the family has an active Paddle subscription, it's canceled
+ * immediately first — best-effort: a Paddle API failure is logged (loudly,
+ * for manual follow-up) but never blocks the deletion itself, same
+ * best-effort contract as the photo cleanup below. Once the family is gone
+ * there's no account left for the customer to self-manage billing from (no
+ * portal-session lookup is possible without the family row), so leaving the
+ * subscription running would silently keep charging them for a household
+ * that no longer exists.
  */
-async function purgeFamily(familyId: string): Promise<void> {
+async function purgeFamily(family: Family): Promise<void> {
+  if (family.paddleSubscriptionId) {
+    const paddle = getPaddleClient();
+    if (paddle) {
+      try {
+        await paddle.subscriptions.cancel(family.paddleSubscriptionId, { effectiveFrom: 'immediately' });
+      } catch (err) {
+        console.error(
+          `[users/purge-account] failed to cancel Paddle subscription ${family.paddleSubscriptionId} for family ${family.id} — needs manual follow-up:`,
+          err,
+        );
+      }
+    } else {
+      console.error(
+        `[users/purge-account] Paddle is not configured; could not cancel subscription ${family.paddleSubscriptionId} for family ${family.id} — needs manual follow-up`,
+      );
+    }
+  }
+
+  const familyId = family.id;
   const photoKeys: string[] = [];
 
   await AppDataSource.transaction(async (manager) => {
