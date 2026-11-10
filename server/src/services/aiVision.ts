@@ -119,6 +119,8 @@ export interface ReviewChorePhotoParams {
   referencePhotos?: ReviewImage[];
   title: string;
   description: string;
+  /** Overrides the default model (claude-sonnet-5) — used by scripts/compareVisionModels.ts to A/B a cheaper model against real submissions without duplicating this prompt/schema/image-building logic anywhere. Production callers never pass this. */
+  model?: string;
 }
 
 /** Build one Anthropic image block from an in-memory image. */
@@ -146,6 +148,7 @@ export async function reviewChorePhoto({
   referencePhotos,
   title,
   description,
+  model,
 }: ReviewChorePhotoParams): Promise<AiReview | null> {
   if (executionPhotos.length === 0) {
     console.warn('[aiVision] No execution photos provided');
@@ -188,7 +191,7 @@ export async function reviewChorePhoto({
     });
 
     const response = await anthropic.messages.create({
-      model: MODEL,
+      model: model ?? MODEL,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
       // Low effort keeps this fast; adaptive thinking stays on, which is
