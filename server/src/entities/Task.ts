@@ -100,46 +100,84 @@ export class Task {
   status!: TaskStatus;
 
   /**
-   * Recurring-task template flag. A recurring task is a normal, completable
-   * task that ALSO keeps producing fresh, independent occurrences of itself
-   * every `frequency` interval — see generateDueRecurringTasks, triggered
-   * lazily from GET /api/tasks/family-tasks rather than a cron job. The
-   * template row is never consumed or deleted by generation; only its
-   * `lastGeneratedAt` stamp advances. Each generated occurrence is a plain
-   * one-off task (isRecurring: false) so clones never themselves recurse.
+   * Recurring-task TEMPLATE flag. A template is a hidden, never-directly-
+   * actionable config row — it never appears on any board (see the
+   * isRecurring: false filter on GET /family-tasks and /open) and is never
+   * itself completed, assigned-to-be-done, or deleted. It exists only to be
+   * read by generateDueRecurringTasks, which spawns real, independent,
+   * fully-visible occurrences (plain tasks with isRecurring: false) on
+   * schedule — one immediately at creation time, then one per `frequency`
+   * interval after that. Only `lastGeneratedAt` ever changes on a template
+   * post-creation. See deadlineDurationMinutes below for why a template
+   * can't carry a literal dueAt the way a normal task does.
    */
   @Column({ type: 'boolean', default: false })
   isRecurring!: boolean;
+
+  /**
+   * True on every clone generateDueRecurringTasks/buildOccurrenceFromTemplate
+   * spawns (never on a template itself, never on a genuinely standalone
+   * task). A clone's `referencePhotoUrls` are the SAME R2 keys as its
+   * template's — copied by reference, not duplicated bytes, to avoid storing
+   * N copies of an identical image across N occurrences — so unlike a
+   * standalone task, a clone's reference photos must survive its own
+   * approval: every sibling occurrence (past and future) is still showing
+   * the same keys. Only deleting the template itself (stopping the series)
+   * retires them — see DELETE /:id's isRecurring branch.
+   */
+  @Column({ type: 'boolean', default: false })
+  isRecurringOccurrence!: boolean;
 
   /** Recurrence cadence — meaningful only when isRecurring is true. */
   @Column({ type: 'enum', enum: TaskFrequency, nullable: true })
   frequency!: TaskFrequency | null;
 
-  /** When this template last spawned an occurrence (null = never yet). */
+  /** When this template last spawned an occurrence (set at creation time too — the immediate first clone counts). */
   @Column({ type: 'timestamp', nullable: true })
   lastGeneratedAt!: Date | null;
 
   /**
-   * Optional deadline, fixed at creation time (now + however many hours/minutes
-   * the parent chose) and never recalculated — assigning the task later never
-   * extends it ("a deadline is a deadline"). Enforced lazily, same pattern as
-   * recurring generation: see enforceDueDeadlines, triggered from GET
-   * /api/tasks/family-tasks. Only meaningful while status is OPEN or PENDING —
-   * once a child submits proof, the deadline no longer applies to that
-   * submission. Cleared (null) once enforcement has fired for this task, so a
-   * task is only ever penalized once.
+   * Optional deadline for an ordinary (non-template) task: an absolute
+   * moment, fixed at creation time (now + however many hours/minutes the
+   * parent chose) and never recalculated — assigning the task later never
+   * extends it ("a deadline is a deadline"). Enforced lazily from GET
+   * /api/tasks/family-tasks (see enforceDueDeadlines): past this moment with
+   * the task still OPEN or PENDING (never submitted), the task is deleted
+   * and the relevant child(ren) are fined — see latePenaltyAmount.
+   *
+   * Always null on a template (isRecurring: true) — a template is never
+   * itself "due," only its occurrences are. A recurring task's deadline is
+   * configured as a duration instead — see deadlineDurationMinutes — so each
+   * freshly generated clone can compute its OWN dueAt as
+   * "generated-just-now + that duration," rather than every clone sharing
+   * one fixed moment that would make no sense once the schedule has run a
+   * few cycles.
    */
   @Column({ type: 'timestamp', nullable: true })
   dueAt!: Date | null;
 
   /**
-   * Coins docked when the deadline passes unmet — from every child in the
+   * Coins docked when a deadline passes unmet — from every child in the
    * family if the task was still OPEN (nobody claimed it), or from the one
-   * assigned child if it was PENDING (they held it and missed it). Meaningful
-   * only alongside dueAt; 0/null means "just unassign, no coin penalty."
+   * assigned child if it was PENDING (they held it and missed it). Carried
+   * over verbatim from a recurring template onto every clone it generates.
+   * Meaningful only alongside a deadline (dueAt on a plain task, or
+   * deadlineDurationMinutes on a template); 0/null means "no coin penalty."
    */
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   latePenaltyAmount!: string | null;
+
+  /**
+   * A recurring template's deadline, expressed as a duration (hours+minutes,
+   * stored as total minutes) rather than a fixed moment — see dueAt's
+   * docstring for why. Meaningful only when isRecurring is true; every clone
+   * generateDueRecurringTasks spawns gets its own dueAt computed as
+   * generation-time + this many minutes, and its own fresh
+   * deadlineReminderSentAt/enforcement lifecycle, independent of every other
+   * occurrence.
+   */
+  @Column({ type: 'int', nullable: true })
+  deadlineDurationMinutes!: number | null;
 
   /**
    * Set once the "time's running out" reminder push has fired for this

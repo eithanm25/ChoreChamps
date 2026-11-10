@@ -176,11 +176,15 @@ export async function runReview(
   // submission photos — nothing is left to compare against anymore.
   //
   // Exception: a recurring template (isRecurring) never really "closes" —
-  // generateDueRecurringTasks keeps cloning this exact row's
-  // referencePhotoUrls into every future occurrence, regardless of whether
-  // this particular occurrence gets approved. Deleting the R2 objects here
-  // would leave every later clone pointing at dangling keys.
-  const photoUrls = [...submissionPhotoUrls, ...(task.isRecurring ? [] : task.referencePhotoUrls ?? [])];
+  // and neither does any one occurrence generated from it
+  // (isRecurringOccurrence) — every occurrence of the same recurring chore
+  // shares the SAME R2 keys as the template (copied by reference, not
+  // duplicated bytes), regardless of whether this particular occurrence gets
+  // approved. Deleting the R2 objects here would leave every sibling/future
+  // occurrence pointing at dangling keys. Only deleting the template itself
+  // (stopping the series — see DELETE /:id) retires them.
+  const skipPhotoCleanup = task.isRecurring || task.isRecurringOccurrence;
+  const photoUrls = [...submissionPhotoUrls, ...(skipPhotoCleanup ? [] : task.referencePhotoUrls ?? [])];
 
   return {
     ok: true,

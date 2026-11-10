@@ -26,10 +26,10 @@ import {
   deleteObjects,
   contentTypeForKey,
 } from '../services/storage';
-import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
+import { toTaskDto, toPublicPhotoUrl, toPublicMember } from '../utils/serializers';
 import { notifyTaskApproved, notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
 import { broadcastFamilyUpdate } from '../services/realtime';
-import { generateDueRecurringTasks } from '../services/recurringTasks';
+import { generateDueRecurringTasks, buildOccurrenceFromTemplate } from '../services/recurringTasks';
 import { enforceDueDeadlines } from '../services/taskDeadlines';
 import {
   FREE_TIER_AI_LIMIT,
@@ -208,6 +208,7 @@ router.post(
       frequency,
       dueAt,
       latePenaltyAmount,
+      deadlineDurationMinutes,
     } = req.body as {
       title?: string;
       description?: string;
@@ -220,10 +221,12 @@ router.post(
       isRecurring?: unknown;
       /** Required, and validated against TaskFrequency, only when isRecurring is truthy. */
       frequency?: unknown;
-      /** ISO timestamp, computed client-side from the parent's hours+minutes input — fixed at creation, never recalculated. Omit for no deadline. */
+      /** ISO timestamp, computed client-side from the parent's hours+minutes input — fixed at creation, never recalculated. Only used when NOT recurring — see deadlineDurationMinutes for the recurring case. Omit for no deadline. */
       dueAt?: unknown;
-      /** Coins docked per child (if open) or from the assignee (if pending) when dueAt passes unmet. Only meaningful alongside dueAt. */
+      /** Coins docked per child (if open) or from the assignee (if pending) when a deadline passes unmet. Only meaningful alongside a deadline. */
       latePenaltyAmount?: unknown;
+      /** Recurring-only deadline, as a raw minute count (parent's hours+minutes input, combined client-side) — a template has no fixed dueAt of its own; every clone it generates computes its own fresh one from this duration. */
+      deadlineDurationMinutes?: unknown;
     };
 
     if (!title || typeof title !== 'string') {
@@ -261,13 +264,37 @@ router.post(
       taskFrequency = frequency as TaskFrequency;
     }
 
-    // Optional deadline: dueAt is an absolute ISO timestamp the client already
-    // computed from the parent's hours+minutes input — the server only
-    // validates it's a real, strictly-future moment, never does the date math
-    // itself (keeps client/server clock interpretation from ever disagreeing).
+    // Optional deadline. Two shapes, mutually exclusive with isRecurring:
+    //  - Plain task: dueAt is an absolute ISO timestamp the client already
+    //    computed from the parent's hours+minutes input — the server only
+    //    validates it's a real, strictly-future moment, never does the date
+    //    math itself (keeps client/server clock interpretation from ever
+    //    disagreeing).
+    //  - Recurring template: deadlineDurationMinutes is a raw duration — a
+    //    template never has a fixed moment of its own (see Task.dueAt's
+    //    docstring), so there's no "future" to validate against here; each
+    //    clone computes its own dueAt at generation time instead.
     let parsedDueAt: Date | null = null;
     let parsedLatePenalty: string | null = null;
-    if (dueAt !== undefined && dueAt !== null && dueAt !== '') {
+    let parsedDeadlineDurationMinutes: number | null = null;
+
+    if (wantsRecurring) {
+      if (deadlineDurationMinutes !== undefined && deadlineDurationMinutes !== null && deadlineDurationMinutes !== '') {
+        const minutes = Number(deadlineDurationMinutes);
+        if (!Number.isFinite(minutes) || !Number.isInteger(minutes) || minutes <= 0) {
+          res.status(400).json({ error: 'משך הטיימר חייב להיות מספר דקות שלם וגדול מאפס' });
+          return;
+        }
+        parsedDeadlineDurationMinutes = minutes;
+
+        const parsedPenalty = latePenaltyAmount === undefined || latePenaltyAmount === '' ? 0 : Number(latePenaltyAmount);
+        if (!Number.isFinite(parsedPenalty) || parsedPenalty < 0) {
+          res.status(400).json({ error: 'קנס האיחור חייב להיות מספר אפס או חיובי' });
+          return;
+        }
+        parsedLatePenalty = parsedPenalty.toFixed(2);
+      }
+    } else if (dueAt !== undefined && dueAt !== null && dueAt !== '') {
       const candidate = new Date(dueAt as string);
       if (Number.isNaN(candidate.getTime()) || candidate.getTime() <= Date.now()) {
         res.status(400).json({ error: 'מועד היעד של המשימה חייב להיות תקין ובעתיד' });
@@ -294,9 +321,11 @@ router.post(
 
     // Anti-abuse: flat cap on concurrently pending tasks per family, regardless
     // of tier — stops a runaway script (or a compromised account) from flooding
-    // the board with unlimited assignments.
+    // the board with unlimited assignments. isRecurring: false — a hidden
+    // recurring template holding "pending" status internally doesn't count;
+    // it was never a real, visible pending task to begin with.
     const pendingTaskCount = await taskRepo.count({
-      where: { family: { id: parent.family.id }, status: TaskStatus.PENDING },
+      where: { family: { id: parent.family.id }, status: TaskStatus.PENDING, isRecurring: false },
     });
     if (pendingTaskCount >= MAX_PENDING_TASKS_PER_FAMILY) {
       res.status(400).json({
@@ -340,7 +369,7 @@ router.post(
       referencePhotoFiles.map((f) => storeUpload(f, `references/${parent.family!.id}`)),
     );
 
-    const task = taskRepo.create({
+    const sharedFields = {
       title,
       description: description ?? '',
       basePrice: parsedBasePrice.toFixed(2),
@@ -351,22 +380,52 @@ router.post(
       assignedTo: assignedChild,
       referencePhotoUrls: referenceKeys.length > 0 ? referenceKeys : null,
       useAiReview: parseAiReviewFlag(useAiReview),
-      isRecurring: wantsRecurring,
-      frequency: taskFrequency,
-      dueAt: parsedDueAt,
-      latePenaltyAmount: parsedLatePenalty,
-    });
+    };
 
-    await taskRepo.save(task);
+    // resultTask is what the parent/child actually see and get notified
+    // about. For a recurring chore that's never the hidden template itself —
+    // it's the first real occurrence, generated immediately so there's never
+    // a gap where only an invisible config row exists (see
+    // buildOccurrenceFromTemplate's docstring).
+    let resultTask: Task;
+
+    if (wantsRecurring) {
+      const template = taskRepo.create({
+        ...sharedFields,
+        isRecurring: true,
+        frequency: taskFrequency,
+        lastGeneratedAt: new Date(),
+        dueAt: null,
+        latePenaltyAmount: parsedLatePenalty,
+        deadlineDurationMinutes: parsedDeadlineDurationMinutes,
+      });
+      await taskRepo.save(template);
+
+      const firstOccurrence = buildOccurrenceFromTemplate(template);
+      await taskRepo.save(firstOccurrence);
+      resultTask = firstOccurrence;
+    } else {
+      const task = taskRepo.create({
+        ...sharedFields,
+        isRecurring: false,
+        frequency: null,
+        lastGeneratedAt: null,
+        dueAt: parsedDueAt,
+        latePenaltyAmount: parsedLatePenalty,
+        deadlineDurationMinutes: null,
+      });
+      await taskRepo.save(task);
+      resultTask = task;
+    }
 
     if (assignedChild) {
-      notifyTaskAssigned(assignedChild.id, task.title, parsedDueAt);
+      notifyTaskAssigned(assignedChild.id, resultTask.title, resultTask.dueAt);
     } else {
-      notifyTaskOpenForClaim(parent.family.id, task.title, parsedDueAt);
+      notifyTaskOpenForClaim(parent.family.id, resultTask.title, resultTask.dueAt);
     }
     broadcastFamilyUpdate(parent.family.id);
 
-    res.status(201).json({ task: toTaskDto(task) });
+    res.status(201).json({ task: toTaskDto(resultTask) });
   },
 );
 
@@ -384,7 +443,9 @@ router.get('/open', requireAuth, async (req: AuthenticatedRequest, res: Response
 
   const taskRepo = AppDataSource.getRepository(Task);
   const tasks = await taskRepo.find({
-    where: { status: TaskStatus.OPEN, family: { id: user.family.id } },
+    // isRecurring: false — a recurring template is a hidden config row, never
+    // itself a real, visible task (see Task.isRecurring's docstring).
+    where: { status: TaskStatus.OPEN, family: { id: user.family.id }, isRecurring: false },
     relations: ['family', 'assignedTo', 'createdBy'],
   });
 
@@ -414,12 +475,49 @@ router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: 
 
   const taskRepo = AppDataSource.getRepository(Task);
   const tasks = await taskRepo.find({
-    where: { family: { id: user.family.id } },
+    // isRecurring: false — a recurring template is a hidden config row, never
+    // itself a real, visible task (see Task.isRecurring's docstring).
+    where: { family: { id: user.family.id }, isRecurring: false },
     relations: ['assignedTo', 'submission', 'family', 'createdBy'],
     order: { createdAt: 'DESC' },
   });
 
   res.json({ tasks: tasks.map(toTaskDto) });
+});
+
+/**
+ * GET /api/tasks/recurring-templates
+ * Parent-only. Recurring templates are deliberately hidden from every other
+ * task listing (see Task.isRecurring's docstring) — this is the one place a
+ * parent can see, and stop (via the existing DELETE /:id), an active
+ * recurring series.
+ */
+router.get('/recurring-templates', requireAuth, requireParent, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  if (!user.family) {
+    res.status(400).json({ error: 'You must belong to a family to view tasks' });
+    return;
+  }
+
+  const taskRepo = AppDataSource.getRepository(Task);
+  const templates = await taskRepo.find({
+    where: { family: { id: user.family.id }, isRecurring: true },
+    relations: ['assignedTo'],
+    order: { createdAt: 'DESC' },
+  });
+
+  res.json({
+    templates: templates.map((t) => ({
+      id: t.id,
+      title: t.title,
+      frequency: t.frequency,
+      assignedTo: toPublicMember(t.assignedTo),
+      basePrice: t.basePrice,
+      maxBonusPrice: t.maxBonusPrice,
+      deadlineDurationMinutes: t.deadlineDurationMinutes,
+      latePenaltyAmount: t.latePenaltyAmount,
+    })),
+  });
 });
 
 /**
@@ -966,10 +1064,19 @@ router.delete(
 
       // A 'completed' or 'rejected' task still has a submission row — the DB
       // cascades that delete, but the proof photo files on disk are ours to clean up.
-      // The parent's reference photo (if any) is cleaned up the same way.
+      // The parent's reference photo (if any) is cleaned up the same way —
+      // EXCEPT for a recurring template or one of its occurrences
+      // (isRecurring / isRecurringOccurrence): every occurrence of the same
+      // recurring chore shares the same R2 keys, so deleting just one of
+      // them (template or a single clone) must never purge a key a sibling
+      // occurrence is still displaying. Accepted trade-off: those reference
+      // photos become orphaned in storage once nothing points at them
+      // anymore (no automatic cleanup) rather than risk breaking a live
+      // clone — cheap storage cost against a real correctness bug.
+      const skipReferenceCleanup = task.isRecurring || task.isRecurringOccurrence;
       const photoUrls = [
         ...(task.submission?.photoUrls ?? []),
-        ...(task.referencePhotoUrls ?? []),
+        ...(skipReferenceCleanup ? [] : task.referencePhotoUrls ?? []),
       ];
 
       await taskRepo.remove(task);

@@ -22,6 +22,14 @@ export async function childHasPendingTask(
     where: {
       assignedTo: { id: childId },
       status: TaskStatus.PENDING,
+      // A recurring template's own status is a vestigial internal field
+      // (never transitions once set — see Task.isRecurring's docstring) and
+      // must never count here. Without this, assigning a recurring chore to
+      // a child would make them look permanently "busy" forever, both
+      // blocking every other real task AND blocking the template's own next
+      // occurrence from generating (generateDueRecurringTasks calls this
+      // same guardrail).
+      isRecurring: false,
     },
     select: ['id'],
   });

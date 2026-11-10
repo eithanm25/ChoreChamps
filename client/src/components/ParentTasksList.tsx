@@ -40,8 +40,15 @@ export interface Task {
   /** Blank worksheet/test, or "golden standard" chore example — empty once approved (files are deleted then). */
   referencePhotoUrls: string[];
   submission?: Submission | null;
-  /** Recurring-task template metadata — frequency is null unless isRecurring is true. */
+  /**
+   * Recurring-task metadata. isRecurring is always false here — the template
+   * itself is hidden server-side and never sent to the client at all (see
+   * server's Task.isRecurring docstring). isRecurringOccurrence marks a
+   * visible task as one generated FROM a recurring template; frequency is
+   * carried onto it purely for display ("🔁 כל שבוע").
+   */
   isRecurring?: boolean;
+  isRecurringOccurrence?: boolean;
   frequency?: TaskFrequency | null;
   /** Deadline metadata — latePenaltyAmount is only meaningful alongside a non-null dueAt. */
   dueAt?: string | null;
@@ -455,9 +462,9 @@ export default function ParentTasksList({ tasks, setTasks, familyTier, familyId 
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <h3 className="font-bold text-white text-base airy-headline leading-tight">{task.title}</h3>
-                            {task.isRecurring && task.frequency && (
+                            {task.isRecurringOccurrence && task.frequency && (
                               <span
-                                title={`משימה מחזורית — יוצרת מופע חדש ${FREQUENCY_LABELS[task.frequency]}`}
+                                title={`מופע של משימה מחזורית — ${FREQUENCY_LABELS[task.frequency]}`}
                                 className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-violet-500/10 text-violet-300 border border-violet-500/20"
                               >
                                 🔁 {FREQUENCY_LABELS[task.frequency]}

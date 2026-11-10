@@ -4,6 +4,7 @@ import { User, UserRole } from '../entities/User';
 import { ChildProfile } from '../entities/ChildProfile';
 import { WalletTransaction, WalletTransactionType } from '../entities/WalletTransaction';
 import { toCents, fromCents } from '../utils/money';
+import { deleteObjects } from './storage';
 import { broadcastFamilyUpdate } from './realtime';
 
 /**
@@ -12,21 +13,25 @@ import { broadcastFamilyUpdate } from './realtime';
  * /api/tasks/family-tasks. A deadline (`dueAt`) is fixed at task creation and
  * never recalculated — assigning the task later never extends it.
  *
- * When a deadline passes on a task still OPEN or PENDING (never submitted):
- *  - PENDING (one child was holding it): that child alone is penalized, and
- *    the task is unassigned back to OPEN so anyone can pick it up — this is
- *    the core anti-hoarding behavior the feature exists for.
+ * When a deadline passes on a task still OPEN or PENDING (never submitted),
+ * the task is DELETED outright, not returned to the board — the window of
+ * real-world urgency it represented has closed, and the same fixed `dueAt`
+ * would just expire again the instant anyone else claimed it. A parent can
+ * always publish a fresh one if it's still needed; a recurring chore already
+ * gets a fresh instance with its own full-length clock next cycle regardless.
+ *  - PENDING (one child was holding it): that child alone is penalized.
  *  - OPEN (nobody had claimed it): every child in the family is penalized —
  *    "nobody did it" is a shared failure, not any one child's.
  * A task already submitted (completed/rejected/approved) is untouched — the
  * child met the deadline the moment they submitted, regardless of what
- * happens to it afterward in the review/rework cycle.
+ * happens to it afterward in the review/rework cycle. A recurring TEMPLATE
+ * is never a candidate here either — see Task.dueAt's docstring, a template
+ * never has a dueAt of its own.
  *
  * Concurrency: identical compare-and-set pattern to generateDueRecurringTasks
  * — the atomic UPDATE's WHERE clause re-checks dueAt/status, so only the
- * request that actually flips the row applies the penalty; everyone else
- * sees affected: 0 and moves on. No lock, no transaction needed for the claim
- * itself (the wallet debit below is its own per-child transaction).
+ * request that actually claims the row proceeds to penalize-and-delete;
+ * everyone else sees affected: 0 and moves on.
  */
 export async function enforceDueDeadlines(familyId: string): Promise<void> {
   const taskRepo = AppDataSource.getRepository(Task);
@@ -48,10 +53,13 @@ export async function enforceDueDeadlines(familyId: string): Promise<void> {
   let anyProcessed = false;
 
   for (const task of candidates) {
+    // Claim first (mark dueAt null so a concurrent request can't double-process
+    // this row), THEN penalize and delete — deleting can't itself be the
+    // compare-and-set condition the way an UPDATE's WHERE clause can.
     const claim = await taskRepo
       .createQueryBuilder()
       .update(Task)
-      .set({ dueAt: null, status: TaskStatus.OPEN, assignedTo: null })
+      .set({ dueAt: null })
       .where('id = :id', { id: task.id })
       .andWhere('status = :expectedStatus', { expectedStatus: task.status })
       .andWhere('"dueAt" IS NOT NULL AND "dueAt" <= :now', { now })
@@ -65,25 +73,34 @@ export async function enforceDueDeadlines(familyId: string): Promise<void> {
     anyProcessed = true;
 
     const penaltyCents = task.latePenaltyAmount ? toCents(task.latePenaltyAmount) : 0;
-    if (penaltyCents <= 0) {
-      continue;
+    if (penaltyCents > 0) {
+      if (task.status === TaskStatus.PENDING && task.assignedTo) {
+        await applyDeadlinePenalty(familyId, [task.assignedTo.id], penaltyCents, task.title);
+      } else if (task.status === TaskStatus.OPEN) {
+        const children = await AppDataSource.getRepository(User).find({
+          where: { family: { id: familyId }, role: UserRole.CHILD },
+          select: ['id'],
+        });
+        if (children.length > 0) {
+          await applyDeadlinePenalty(
+            familyId,
+            children.map((c) => c.id),
+            penaltyCents,
+            task.title,
+          );
+        }
+      }
     }
 
-    if (task.status === TaskStatus.PENDING && task.assignedTo) {
-      await applyDeadlinePenalty(familyId, [task.assignedTo.id], penaltyCents, task.title);
-    } else if (task.status === TaskStatus.OPEN) {
-      const children = await AppDataSource.getRepository(User).find({
-        where: { family: { id: familyId }, role: UserRole.CHILD },
-        select: ['id'],
-      });
-      if (children.length > 0) {
-        await applyDeadlinePenalty(
-          familyId,
-          children.map((c) => c.id),
-          penaltyCents,
-          task.title,
-        );
-      }
+    await taskRepo.delete({ id: task.id });
+    // isRecurringOccurrence: this clone shares its reference photo keys with
+    // every sibling occurrence of the same recurring chore (see
+    // Task.isRecurringOccurrence's docstring) — deleting this one missed
+    // occurrence must never purge a key a sibling is still displaying.
+    if (!task.isRecurringOccurrence && task.referencePhotoUrls && task.referencePhotoUrls.length > 0) {
+      // Best-effort, same contract as every other deleteObjects call site —
+      // the row is already gone either way.
+      await deleteObjects(task.referencePhotoUrls);
     }
   }
 

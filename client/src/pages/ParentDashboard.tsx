@@ -5,6 +5,7 @@ import api from '../services/api';
 import type { SafeUser } from '../App';
 import ParentTasksList, { type Task } from '../components/ParentTasksList';
 import ParentRewardsPanel from '../components/ParentRewardsPanel';
+import RecurringTasksPanel from '../components/RecurringTasksPanel';
 import MessageBanner from '../components/MessageBanner';
 import { usePolling, FALLBACK_POLL_INTERVAL_MS } from '../hooks/usePolling';
 import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
@@ -275,9 +276,12 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     const { title, description, basePrice, maxBonusPrice } = taskForm;
     if (!title.trim() || !basePrice || !maxBonusPrice) return;
 
-    // טיימר יעד: מחושב כאן (זמן אבסולוטי), לא בשרת — כך שלקוח ושרת לעולם לא
-    // יפרשו "עכשיו" אחרת. חייב לפחות שעה או דקה אחת; 0 ו-0 זו לא משימה עם טיימר.
+    // טיימר יעד: למשימה רגילה מחשבים כאן זמן אבסולוטי (לא בשרת, כדי שלקוח
+    // ושרת לעולם לא יפרשו "עכשיו" אחרת). למשימה מחזורית שולחים את משך הזמן
+    // הגולמי בלבד — לתבנית אין "רגע יעד" משלה, כל מופע מחשב את שלו מחדש
+    // ברגע שהוא נוצר (ראו buildOccurrenceFromTemplate בשרת).
     let dueAtIso: string | null = null;
+    let deadlineTotalMinutes: number | null = null;
     if (taskForm.hasDeadline) {
       const hours = Number(taskForm.deadlineHours) || 0;
       const minutes = Number(taskForm.deadlineMinutes) || 0;
@@ -285,7 +289,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
         setDashboardMessage({ type: 'error', text: 'יש להזין זמן יעד גדול מאפס (שעות ו/או דקות)' });
         return;
       }
-      dueAtIso = new Date(Date.now() + (hours * 60 + minutes) * 60_000).toISOString();
+      deadlineTotalMinutes = hours * 60 + minutes;
+      if (!taskForm.isRecurring) {
+        dueAtIso = new Date(Date.now() + deadlineTotalMinutes * 60_000).toISOString();
+      }
     }
 
     setTaskLoading(true);
@@ -309,6 +316,9 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
       }
       if (dueAtIso) {
         formData.append('dueAt', dueAtIso);
+        formData.append('latePenaltyAmount', String(Number(taskForm.latePenaltyAmount) || 0));
+      } else if (deadlineTotalMinutes) {
+        formData.append('deadlineDurationMinutes', String(deadlineTotalMinutes));
         formData.append('latePenaltyAmount', String(Number(taskForm.latePenaltyAmount) || 0));
       }
 
@@ -713,6 +723,9 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
 
                 {mainTab === 'tasks' && (
           <div className="flex flex-col gap-6 animate-fade-in">
+            {/* משימות מחזוריות פעילות — התבניות עצמן מוסתרות מהלוח הרגיל, זה המקום היחיד לראות ולעצור סדרה פעילה */}
+            <RecurringTasksPanel />
+
             {/* לוח המעקב החכם (עם 3 הטאבים הפנימיים, צילומי התמונות וניתוח ה-JSONB) */}
             <ParentTasksList tasks={tasks} setTasks={setTasks} familyTier={familyInfo?.tier} familyId={user.familyId} />
 

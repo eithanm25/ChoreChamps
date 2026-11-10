@@ -40,8 +40,15 @@ export interface TaskDto {
   createdAt: Date;
   assignedTo: PublicMember | null;
   createdBy: PublicMember | null;
-  /** Recurring-task template metadata — see generateDueRecurringTasks. frequency is null unless isRecurring is true. */
+  /**
+   * Recurring-task metadata. isRecurring is always false here — a template
+   * is hidden server-side and never serialized to the client at all (see
+   * Task.isRecurring's docstring). isRecurringOccurrence marks a visible
+   * task as one generated from a recurring template; frequency rides along
+   * purely for display on it ("🔁 כל שבוע").
+   */
   isRecurring: boolean;
+  isRecurringOccurrence: boolean;
   frequency: Task['frequency'];
   /** Deadline metadata — see enforceDueDeadlines. latePenaltyAmount is only meaningful alongside a non-null dueAt. */
   dueAt: Date | null;
@@ -78,6 +85,7 @@ export function toTaskDto(task: Task): TaskDto {
     assignedTo: toPublicMember(task.assignedTo),
     createdBy: toPublicMember(task.createdBy),
     isRecurring: task.isRecurring,
+    isRecurringOccurrence: task.isRecurringOccurrence,
     frequency: task.frequency,
     dueAt: task.dueAt,
     latePenaltyAmount: task.latePenaltyAmount,
