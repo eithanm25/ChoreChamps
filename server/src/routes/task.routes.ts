@@ -30,6 +30,7 @@ import { toTaskDto, toPublicPhotoUrl } from '../utils/serializers';
 import { notifyTaskApproved, notifyTaskAssigned, notifyTaskOpenForClaim, notifyTaskSubmitted } from '../services/oneSignal';
 import { broadcastFamilyUpdate } from '../services/realtime';
 import { generateDueRecurringTasks } from '../services/recurringTasks';
+import { enforceDueDeadlines } from '../services/taskDeadlines';
 import {
   FREE_TIER_AI_LIMIT,
   MAX_DAILY_SUBMISSIONS_PER_FAMILY,
@@ -196,7 +197,18 @@ router.post(
   requireParent,
   handleReferencePhotoUpload,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { title, description, basePrice, maxBonusPrice, assignedToId, useAiReview, isRecurring, frequency } = req.body as {
+    const {
+      title,
+      description,
+      basePrice,
+      maxBonusPrice,
+      assignedToId,
+      useAiReview,
+      isRecurring,
+      frequency,
+      dueAt,
+      latePenaltyAmount,
+    } = req.body as {
       title?: string;
       description?: string;
       basePrice?: unknown;
@@ -208,6 +220,10 @@ router.post(
       isRecurring?: unknown;
       /** Required, and validated against TaskFrequency, only when isRecurring is truthy. */
       frequency?: unknown;
+      /** ISO timestamp, computed client-side from the parent's hours+minutes input — fixed at creation, never recalculated. Omit for no deadline. */
+      dueAt?: unknown;
+      /** Coins docked per child (if open) or from the assignee (if pending) when dueAt passes unmet. Only meaningful alongside dueAt. */
+      latePenaltyAmount?: unknown;
     };
 
     if (!title || typeof title !== 'string') {
@@ -243,6 +259,28 @@ router.post(
         return;
       }
       taskFrequency = frequency as TaskFrequency;
+    }
+
+    // Optional deadline: dueAt is an absolute ISO timestamp the client already
+    // computed from the parent's hours+minutes input — the server only
+    // validates it's a real, strictly-future moment, never does the date math
+    // itself (keeps client/server clock interpretation from ever disagreeing).
+    let parsedDueAt: Date | null = null;
+    let parsedLatePenalty: string | null = null;
+    if (dueAt !== undefined && dueAt !== null && dueAt !== '') {
+      const candidate = new Date(dueAt as string);
+      if (Number.isNaN(candidate.getTime()) || candidate.getTime() <= Date.now()) {
+        res.status(400).json({ error: 'מועד היעד של המשימה חייב להיות תקין ובעתיד' });
+        return;
+      }
+      parsedDueAt = candidate;
+
+      const parsedPenalty = latePenaltyAmount === undefined || latePenaltyAmount === '' ? 0 : Number(latePenaltyAmount);
+      if (!Number.isFinite(parsedPenalty) || parsedPenalty < 0) {
+        res.status(400).json({ error: 'קנס האיחור חייב להיות מספר אפס או חיובי' });
+        return;
+      }
+      parsedLatePenalty = parsedPenalty.toFixed(2);
     }
 
     const parent = req.user!;
@@ -315,6 +353,8 @@ router.post(
       useAiReview: parseAiReviewFlag(useAiReview),
       isRecurring: wantsRecurring,
       frequency: taskFrequency,
+      dueAt: parsedDueAt,
+      latePenaltyAmount: parsedLatePenalty,
     });
 
     await taskRepo.save(task);
@@ -355,11 +395,12 @@ router.get('/open', requireAuth, async (req: AuthenticatedRequest, res: Response
  * GET /api/tasks/family-tasks
  * Returns all tasks for the logged-in user's family, with relations for UI grouping.
  *
- * Lazy-evaluation trigger for recurring chores lives here: before reading the
- * board, any due recurring template generates its next occurrence inline (see
- * generateDueRecurringTasks) — no cron runner, no queue, just "generate on the
- * next read if it's due" — so a freshly-spawned occurrence is already in the
- * very same response that noticed it was due.
+ * Two lazy-evaluation triggers live here, same pattern, both checked before
+ * reading the board: any due recurring template generates its next occurrence
+ * (see generateDueRecurringTasks), and any task whose deadline has passed
+ * unmet gets unassigned/penalized (see enforceDueDeadlines) — no cron runner,
+ * no queue, just "settle anything that's due on the next read" — so the
+ * result is already reflected in the very same response that noticed it.
  */
 router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
@@ -368,6 +409,7 @@ router.get('/family-tasks', requireAuth, async (req: AuthenticatedRequest, res: 
     return;
   }
 
+  await enforceDueDeadlines(user.family.id);
   await generateDueRecurringTasks(user.family.id);
 
   const taskRepo = AppDataSource.getRepository(Task);

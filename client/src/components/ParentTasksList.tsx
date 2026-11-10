@@ -9,6 +9,7 @@ import { useFamilyRealtime } from '../hooks/useFamilyRealtime';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { SubscriptionTier } from '../types/family';
 import { FREQUENCY_LABELS, type TaskFrequency } from '../types/task';
+import { formatTimeLeft } from '../utils/countdown';
 
 // הגדרת ה-Interfaces המבניים המסונכרנים עם השרת
 interface AiSummaryJson {
@@ -42,6 +43,9 @@ export interface Task {
   /** Recurring-task template metadata — frequency is null unless isRecurring is true. */
   isRecurring?: boolean;
   frequency?: TaskFrequency | null;
+  /** Deadline metadata — latePenaltyAmount is only meaningful alongside a non-null dueAt. */
+  dueAt?: string | null;
+  latePenaltyAmount?: string | number | null;
 }
 
 interface FamilyMember {
@@ -457,6 +461,14 @@ export default function ParentTasksList({ tasks, setTasks, familyTier, familyId 
                                 className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-violet-500/10 text-violet-300 border border-violet-500/20"
                               >
                                 🔁 {FREQUENCY_LABELS[task.frequency]}
+                              </span>
+                            )}
+                            {task.dueAt && (task.status === 'open' || task.status === 'pending') && (
+                              <span
+                                title={`טיימר יעד — ${Number(task.latePenaltyAmount) > 0 ? `קנס איחור: ${Number(task.latePenaltyAmount)} מטבעות` : 'ללא קנס'}`}
+                                className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                              >
+                                ⏰ {formatTimeLeft(task.dueAt)}
                               </span>
                             )}
                           </div>

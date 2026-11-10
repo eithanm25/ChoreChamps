@@ -119,6 +119,28 @@ export class Task {
   @Column({ type: 'timestamp', nullable: true })
   lastGeneratedAt!: Date | null;
 
+  /**
+   * Optional deadline, fixed at creation time (now + however many hours/minutes
+   * the parent chose) and never recalculated — assigning the task later never
+   * extends it ("a deadline is a deadline"). Enforced lazily, same pattern as
+   * recurring generation: see enforceDueDeadlines, triggered from GET
+   * /api/tasks/family-tasks. Only meaningful while status is OPEN or PENDING —
+   * once a child submits proof, the deadline no longer applies to that
+   * submission. Cleared (null) once enforcement has fired for this task, so a
+   * task is only ever penalized once.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  dueAt!: Date | null;
+
+  /**
+   * Coins docked when the deadline passes unmet — from every child in the
+   * family if the task was still OPEN (nobody claimed it), or from the one
+   * assigned child if it was PENDING (they held it and missed it). Meaningful
+   * only alongside dueAt; 0/null means "just unassign, no coin penalty."
+   */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  latePenaltyAmount!: string | null;
+
   /** The household this chore belongs to. */
   @ManyToOne(() => Family, (family) => family.tasks)
   @JoinColumn({ name: 'familyId' })

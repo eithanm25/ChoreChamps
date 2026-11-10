@@ -17,6 +17,7 @@ import type { FamilyInfo } from '../types/family';
 import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
 import LandingPage from './LandingPage';
 import { registerForPushNotifications } from '../services/oneSignal';
+import { formatTimeLeft } from '../utils/countdown';
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -53,6 +54,9 @@ interface Task {
   /** Blank worksheet/test to answer, or "golden standard" chore example(s), if the parent attached any. */
   referencePhotoUrls: string[];
   submission?: Submission | null;
+  /** Deadline metadata — latePenaltyAmount is only meaningful alongside a non-null dueAt. */
+  dueAt?: string | null;
+  latePenaltyAmount?: string | number | null;
 }
 
 interface FamilyMember {
@@ -483,7 +487,14 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                   {openAvailableTasks.map(task => (
                     <div key={task.id} className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/40 flex flex-col justify-between gap-3">
                       <div>
-                        <h3 className="font-bold text-white text-sm">{task.title}</h3>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="font-bold text-white text-sm">{task.title}</h3>
+                          {task.dueAt && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                              ⏰ {formatTimeLeft(task.dueAt)}
+                            </span>
+                          )}
+                        </div>
                         {task.description && <p className="text-slate-400 text-xs leading-relaxed mt-1">{task.description}</p>}
                       </div>
                       <div className="flex justify-between items-center border-t border-slate-800 pt-2.5">
@@ -512,9 +523,16 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                       <h3 className="font-black text-white text-base mt-0.5">{myPendingTask.title}</h3>
                       {myPendingTask.description && <p className="text-slate-400 text-xs leading-relaxed mt-1">{myPendingTask.description}</p>}
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400">
-                      🏃 בתהליך ביצוע
-                    </span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400 whitespace-nowrap">
+                        🏃 בתהליך ביצוע
+                      </span>
+                      {myPendingTask.dueAt && (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                          ⏰ {formatTimeLeft(myPendingTask.dueAt)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {myPendingTask.referencePhotoUrls.length > 0 && (

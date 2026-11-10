@@ -16,6 +16,8 @@ export enum WalletTransactionType {
   PARENT_GIVE = 'parent_give',
   /** A parent manually debiting a child's wallet (fine, correction). */
   PARENT_TAKE = 'parent_take',
+  /** Automatic penalty from a missed task deadline — see taskDeadlines.ts. No human initiator. */
+  TASK_DEADLINE_PENALTY = 'task_deadline_penalty',
 }
 
 /**

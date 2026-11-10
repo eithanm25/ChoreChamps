@@ -62,6 +62,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
   const [taskForm, setTaskForm] = useState({
     title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true,
     isRecurring: false, frequency: 'daily' as TaskFrequency,
+    hasDeadline: false, deadlineHours: '', deadlineMinutes: '', latePenaltyAmount: '',
   });
   const [taskLoading, setTaskLoading] = useState(false);
   // מסלול המנוי ומכסת בדיקות ה-AI — נטענים מ-/api/family/me ומשפיעים על טופס פרסום המשימה למטה
@@ -175,6 +176,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     setTaskForm(prev => ({ ...prev, frequency: e.target.value as TaskFrequency }));
   };
 
+  const toggleHasDeadline = () => {
+    setTaskForm(prev => ({ ...prev, hasDeadline: !prev.hasDeadline }));
+  };
+
   // הוספת ילד/ה חדש/ה למשפחה (הורים נוספים מצטרפים רק דרך הזמנת Google — ראו למטה)
   async function handleAddMember(e: SyntheticEvent) {
     e.preventDefault();
@@ -269,6 +274,19 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
     const { title, description, basePrice, maxBonusPrice } = taskForm;
     if (!title.trim() || !basePrice || !maxBonusPrice) return;
 
+    // טיימר יעד: מחושב כאן (זמן אבסולוטי), לא בשרת — כך שלקוח ושרת לעולם לא
+    // יפרשו "עכשיו" אחרת. חייב לפחות שעה או דקה אחת; 0 ו-0 זו לא משימה עם טיימר.
+    let dueAtIso: string | null = null;
+    if (taskForm.hasDeadline) {
+      const hours = Number(taskForm.deadlineHours) || 0;
+      const minutes = Number(taskForm.deadlineMinutes) || 0;
+      if (hours <= 0 && minutes <= 0) {
+        setDashboardMessage({ type: 'error', text: 'יש להזין זמן יעד גדול מאפס (שעות ו/או דקות)' });
+        return;
+      }
+      dueAtIso = new Date(Date.now() + (hours * 60 + minutes) * 60_000).toISOString();
+    }
+
     setTaskLoading(true);
     try {
       // FormData במקום JSON כדי לתמוך בצירוף תמונת הייחוס האופציונלית
@@ -288,6 +306,10 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
       if (taskForm.isRecurring) {
         formData.append('frequency', taskForm.frequency);
       }
+      if (dueAtIso) {
+        formData.append('dueAt', dueAtIso);
+        formData.append('latePenaltyAmount', String(Number(taskForm.latePenaltyAmount) || 0));
+      }
 
       const response = await api.post('/api/tasks', formData);
 
@@ -306,6 +328,7 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
       setTaskForm({
         title: '', description: '', basePrice: '', maxBonusPrice: '', assignedToId: '', useAiReview: true,
         isRecurring: false, frequency: 'daily',
+        hasDeadline: false, deadlineHours: '', deadlineMinutes: '', latePenaltyAmount: '',
       });
       clearReferencePhotos();
       setMembers(prevMembers =>
@@ -774,6 +797,76 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                           </select>
                           <p className="text-slate-500 text-[11px] leading-relaxed mt-0.5">
                             משימה חדשה וזהה תיווצר אוטומטית במחזור הבא, כל עוד המשימה הזו עדיין קיימת בלוח.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ⏰ טיימר יעד — אם לא מושלם בזמן, המשימה חוזרת ללוח הפתוח וגובה קנס */}
+                    <div className={`flex flex-col gap-2 p-3 rounded-xl border transition-all ${
+                      taskForm.hasDeadline ? 'bg-indigo-950/20 border-indigo-500/30' : 'bg-slate-800/40 border-slate-700/50'
+                    }`}>
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={taskForm.hasDeadline}
+                          onChange={toggleHasDeadline}
+                          disabled={taskLoading}
+                          className="w-4 h-4 rounded accent-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-slate-200 text-sm font-bold flex items-center gap-1">
+                          <span>⏰</span> משימה עם טיימר יעד?
+                        </span>
+                      </label>
+
+                      {taskForm.hasDeadline && (
+                        <div className="flex flex-col gap-2 pr-6">
+                          <label className="text-slate-400 text-[11px] font-medium">תוך כמה זמן המשימה צריכה להסתיים?</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-slate-500 text-[10px]">שעות</label>
+                              <input
+                                type="number"
+                                name="deadlineHours"
+                                min="0"
+                                step="1"
+                                value={taskForm.deadlineHours}
+                                onChange={handleTaskInputChange}
+                                placeholder="2"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-left"
+                                disabled={taskLoading}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-slate-500 text-[10px]">דקות</label>
+                              <input
+                                type="number"
+                                name="deadlineMinutes"
+                                min="0"
+                                max="59"
+                                step="1"
+                                value={taskForm.deadlineMinutes}
+                                onChange={handleTaskInputChange}
+                                placeholder="30"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-left"
+                                disabled={taskLoading}
+                              />
+                            </div>
+                          </div>
+                          <label className="text-slate-400 text-[11px] font-medium mt-1">קנס איחור (מטבעות, אופציונלי)</label>
+                          <input
+                            type="number"
+                            name="latePenaltyAmount"
+                            min="0"
+                            step="0.1"
+                            value={taskForm.latePenaltyAmount}
+                            onChange={handleTaskInputChange}
+                            placeholder="0"
+                            className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-left"
+                            disabled={taskLoading}
+                          />
+                          <p className="text-slate-500 text-[11px] leading-relaxed mt-0.5">
+                            הטיימר מתחיל לרוץ מרגע הפרסום, בלי קשר לשיוך. אם הזמן נגמר ואף אחד לא סיים: המשימה חוזרת ללוח הפתוח, וכל הילדים ייקנסו בסכום שקבעתם. אם הייתה משויכת לילד/ה מסוים/ת: רק הוא/היא ייקנסו, והמשימה חוזרת לפתוחה לכולם.
                           </p>
                         </div>
                       )}
