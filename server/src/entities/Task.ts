@@ -141,6 +141,15 @@ export class Task {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   latePenaltyAmount!: string | null;
 
+  /**
+   * Set once the "time's running out" reminder push has fired for this
+   * deadline, so the background check (see deadlineReminders.ts) never sends
+   * it twice. Unrelated to dueAt being cleared — that only happens when the
+   * deadline is actually missed/enforced.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  deadlineReminderSentAt!: Date | null;
+
   /** The household this chore belongs to. */
   @ManyToOne(() => Family, (family) => family.tasks)
   @JoinColumn({ name: 'familyId' })

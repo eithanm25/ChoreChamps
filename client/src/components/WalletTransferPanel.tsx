@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import axios from 'axios';
 import api from '../services/api';
+import { splitBalance } from '../utils/balance';
 
 export interface WalletCandidate {
   id: string;
@@ -45,7 +46,14 @@ function ContactCircle({
         {initial}
       </div>
       <span className={`text-[11px] font-bold ${selected ? 'text-indigo-300' : 'text-slate-400'}`}>{name}</span>
-      {typeof balance === 'number' && <span className="text-[9px] text-slate-500">{balance} 🪙</span>}
+      {typeof balance === 'number' && (
+        <>
+          <span className="text-[9px] text-slate-500">{splitBalance(balance).displayBalance} 🪙</span>
+          {splitBalance(balance).debt > 0 && (
+            <span className="text-[8px] text-rose-400 font-bold">חוב: {splitBalance(balance).debt}</span>
+          )}
+        </>
+      )}
     </button>
   );
 }

@@ -147,8 +147,13 @@ router.post('/transfer-sibling', async (req: AuthenticatedRequest, res: Response
  * POST /api/wallet/parent-adjust
  * Parent manually credits ('give') or debits ('take') one child's wallet —
  * a bonus, an allowance top-up, or a behavioral fine. Locked and atomic like
- * every other balance mutation in the app; 'take' is rejected if it would
- * overdraw the child below zero.
+ * every other balance mutation in the app. 'take' always deducts the full
+ * amount, even past zero — a fine is a fine regardless of what the child
+ * currently has (same rule as the automatic missed-deadline penalty in
+ * taskDeadlines.ts). The client never shows a negative number: it displays
+ * 0 plus a separate "debt" note (see client/src/utils/balance.ts) that
+ * disappears on its own once future earnings bring the balance back above
+ * zero — there's no separate debt ledger, just the one signed balance.
  */
 router.post('/parent-adjust', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   const parent = req.user!;
@@ -206,10 +211,8 @@ router.post('/parent-adjust', requireParent, async (req: AuthenticatedRequest, r
         }
 
         const balanceCents = toCents(profile.balance);
-        if (action === 'take' && amountCents > balanceCents) {
-          return { ok: false, status: 409, error: 'אין לילד/ה מספיק מטבעות בארנק לביצוע הפעולה' };
-        }
-
+        // 'take' always deducts the full fine, even past zero — see this
+        // route's docstring. Only 'give' has no guard to begin with.
         const newBalanceCents = action === 'give' ? balanceCents + amountCents : balanceCents - amountCents;
         const newBalance = fromCents(newBalanceCents);
         await manager.update(ChildProfile, { id: childId }, { balance: newBalance });

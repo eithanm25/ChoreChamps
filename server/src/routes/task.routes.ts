@@ -360,9 +360,9 @@ router.post(
     await taskRepo.save(task);
 
     if (assignedChild) {
-      notifyTaskAssigned(assignedChild.id, task.title);
+      notifyTaskAssigned(assignedChild.id, task.title, parsedDueAt);
     } else {
-      notifyTaskOpenForClaim(parent.family.id, task.title);
+      notifyTaskOpenForClaim(parent.family.id, task.title, parsedDueAt);
     }
     broadcastFamilyUpdate(parent.family.id);
 

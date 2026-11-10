@@ -31,7 +31,17 @@ export class ChildProfile {
   @JoinColumn({ name: 'id' })
   user!: User;
 
-  /** Spendable ChoreCoins right now. Directly incremented/decremented — never derived. */
+  /**
+   * Spendable ChoreCoins right now. Directly incremented/decremented — never
+   * derived. Can go negative: a parent fine or an automatic missed-deadline
+   * penalty (taskDeadlines.ts) always deducts the full amount regardless of
+   * what the child currently has — there's no separate debt ledger, the
+   * client just displays a negative value as "0 + a debt note" (see
+   * client/src/utils/balance.ts) until future earnings bring it back above
+   * zero on their own. Voluntary spends (reward purchases, sibling
+   * transfers) still guard against going negative — only punitive
+   * deductions bypass that floor.
+   */
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   balance!: string;
 

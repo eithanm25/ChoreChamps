@@ -93,14 +93,15 @@ export async function enforceDueDeadlines(familyId: string): Promise<void> {
 }
 
 /**
- * Debits each child the same penalty amount (not split between them),
- * clamped to their current balance — never goes negative, same ceiling as
- * the manual parent 'take' adjustment in wallet.routes.ts, except this never
- * *rejects* the whole operation over insufficient funds (there's no human
- * present to retry): it just takes what's available, down to zero. Each
- * debit is its own transaction, locked per child, with a WalletTransaction
- * audit row so the deduction is visible in wallet history, not a silent
- * balance change.
+ * Debits each child the same penalty amount (not split between them) — the
+ * full amount, even past zero, same rule as the manual parent 'take'
+ * adjustment in wallet.routes.ts: a fee is a fee regardless of what the
+ * child currently has, and there's no human present here to ask for a
+ * smaller amount anyway. The client never shows the negative number itself —
+ * see client/src/utils/balance.ts for the "0 + separate debt note" display.
+ * Each debit is its own transaction, locked per child, with a
+ * WalletTransaction audit row so the deduction is visible in wallet history,
+ * not a silent balance change.
  */
 async function applyDeadlinePenalty(
   familyId: string,
@@ -119,18 +120,13 @@ async function applyDeadlinePenalty(
       }
 
       const balanceCents = toCents(profile.balance);
-      const deductCents = Math.min(penaltyCents, balanceCents);
-      if (deductCents <= 0) {
-        return;
-      }
-
-      const newBalance = fromCents(balanceCents - deductCents);
+      const newBalance = fromCents(balanceCents - penaltyCents);
       await manager.update(ChildProfile, { id: childId }, { balance: newBalance });
 
       const transaction = manager.create(WalletTransaction, {
         familyId,
         type: WalletTransactionType.TASK_DEADLINE_PENALTY,
-        amount: fromCents(deductCents),
+        amount: fromCents(penaltyCents),
         reason: `איחור במשימה: ${taskTitle}`,
         fromChildId: childId,
         toChildId: null,

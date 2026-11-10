@@ -120,24 +120,40 @@ const familyTag = (familyId: string): OneSignalFilterEntry[] => [
   { field: 'tag', key: 'familyId', relation: '=', value: familyId },
 ];
 
+/** "2 שעות" / "45 דקות" / "שעה ו-30 דקות" — used both for the deadline note on a freshly-published task and for the reminder push. */
+function formatDurationHebrew(ms: number): string {
+  const totalMinutes = Math.max(0, Math.round(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) {
+    return `${minutes} דקות`;
+  }
+  if (minutes === 0) {
+    return `${hours} שעות`;
+  }
+  return `${hours} שעות ו-${minutes} דקות`;
+}
+
 // ── Parent → child ──────────────────────────────────────────────────────
 
-/** A parent assigned a task directly to one child. */
-export function notifyTaskAssigned(childUserId: string, taskTitle: string): void {
+/** A parent assigned a task directly to one child. dueAt, when the task has a deadline, appends how long they have. */
+export function notifyTaskAssigned(childUserId: string, taskTitle: string, dueAt?: Date | null): void {
+  const deadlineNote = dueAt ? ` ⏰ יש לך עד ${formatDurationHebrew(dueAt.getTime() - Date.now())} להשלים!` : '';
   sendPushInBackground({
     context: 'task-assigned',
     title: '🎯 משימה חדשה מחכה לך!',
-    body: `המשימה '${taskTitle}' עלתה ללוח. צא לדרך והרווח ChoreCoins!`,
+    body: `המשימה '${taskTitle}' עלתה ללוח. צא לדרך והרווח ChoreCoins!${deadlineNote}`,
     filters: userTag(childUserId),
   });
 }
 
-/** A parent published an open task any child in the family may claim ("לחטיפה"). */
-export function notifyTaskOpenForClaim(familyId: string, taskTitle: string): void {
+/** A parent published an open task any child in the family may claim ("לחטיפה"). dueAt, when the task has a deadline, appends how long is left to grab and finish it. */
+export function notifyTaskOpenForClaim(familyId: string, taskTitle: string, dueAt?: Date | null): void {
+  const deadlineNote = dueAt ? ` ⏰ יש לכם עד ${formatDurationHebrew(dueAt.getTime() - Date.now())} לחטוף ולהשלים!` : '';
   sendPushInBackground({
     context: 'task-open-for-claim',
     title: '🔥 משימה חמה בלוח!',
-    body: `מי הראשון שיחטוף את המשימה '${taskTitle}' ויקח את הפרס?`,
+    body: `מי הראשון שיחטוף את המשימה '${taskTitle}' ויקח את הפרס?${deadlineNote}`,
     filters: familyRoleTag(familyId, 'child'),
   });
 }
@@ -220,6 +236,33 @@ export function notifySharedRewardContribution(
     title: '🚀 עוד צעד למטרה המשפחתית!',
     body: `${childName} תרם/ה ${amount} מטבעות עבור הפרס המשותף '${rewardTitle}'. ממשיכים יחד אל היעד!`,
     filters: familyTag(familyId),
+  });
+}
+
+// ── Deadline reminders ───────────────────────────────────────────────────
+
+/** Running low on time, to the one child currently holding the task. timeLeftLabel is pre-formatted Hebrew ("2 שעות"/"שעה"). */
+export function notifyDeadlineReminderAssigned(
+  childUserId: string,
+  childName: string,
+  taskTitle: string,
+  timeLeftLabel: string,
+): void {
+  sendPushInBackground({
+    context: 'deadline-reminder-assigned',
+    title: '⏰ הזמן אוזל!',
+    body: `${childName}, נותרו ${timeLeftLabel} להשלים את '${taskTitle}'! מהר, אל תפספס/י!`,
+    filters: userTag(childUserId),
+  });
+}
+
+/** Running low on time on a still-unclaimed task — every child in the family gets this one, not just one assignee. */
+export function notifyDeadlineReminderUnassigned(familyId: string, taskTitle: string, timeLeftLabel: string): void {
+  sendPushInBackground({
+    context: 'deadline-reminder-unassigned',
+    title: '⏰ הזמן אוזל על המשימה!',
+    body: `נותרו ${timeLeftLabel} למשימה '${taskTitle}'! מי יחטוף אותה לפני שהזמן נגמר?`,
+    filters: familyRoleTag(familyId, 'child'),
   });
 }
 

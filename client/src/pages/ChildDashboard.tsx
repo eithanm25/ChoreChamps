@@ -18,6 +18,7 @@ import { MAX_EXECUTION_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/fam
 import LandingPage from './LandingPage';
 import { registerForPushNotifications } from '../services/oneSignal';
 import { formatTimeLeft } from '../utils/countdown';
+import { splitBalance } from '../utils/balance';
 
 interface ChildDashboardProps {
   user: SafeUser;
@@ -262,6 +263,7 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
 
   const currentChildProfile = members.find(m => m.id === user.id);
   const currentBalance = currentChildProfile?.balance || 0;
+  const currentBalanceSplit = splitBalance(currentBalance);
 
   const openAvailableTasks = tasks.filter(t => t.status === 'open' && !t.assignedTo);
 
@@ -439,7 +441,12 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
           <div className="text-3xl animate-bounce">🪙</div>
           <div>
             <span className="text-slate-400 text-xs font-bold block">הארנק שלי 💰</span>
-            <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalance}</span>
+            <span className="text-2xl font-black text-amber-400 drop-shadow-md">{currentBalanceSplit.displayBalance}</span>
+            {currentBalanceSplit.debt > 0 && (
+              <p className="text-rose-400 text-[10px] font-bold mt-0.5">
+                חוב: {currentBalanceSplit.debt} מטבעות — ינוכה אוטומטית כשתצברו מספיק 💪
+              </p>
+            )}
           </div>
         </div>
 
@@ -710,7 +717,12 @@ export default function ChildDashboard({ user, onLogout, onUserUpdate }: ChildDa
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${member.role === 'parent' ? 'bg-purple-500/10 text-purple-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{member.role === 'parent' ? 'הורה' : 'צ׳אמפ'}</span>
                     </div>
                     {member.role === 'child' && (
-                      <p className="text-[10px] text-slate-400 mt-1 font-medium">🏆 ביצע {member.lifetimeTasksCount || 0} משימות • 💰 יתרת מטבעות: {member.balance || 0}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                        🏆 ביצע {member.lifetimeTasksCount || 0} משימות • 💰 יתרת מטבעות: {splitBalance(member.balance || 0).displayBalance}
+                        {splitBalance(member.balance || 0).debt > 0 && (
+                          <span className="text-rose-400"> (חוב: {splitBalance(member.balance || 0).debt})</span>
+                        )}
+                      </p>
                     )}
                   </div>
                 ))}

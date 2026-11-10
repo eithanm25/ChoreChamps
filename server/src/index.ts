@@ -11,6 +11,7 @@ import walletRoutes from './routes/wallet.routes';
 import paymentRoutes from './routes/payment.routes';
 import userRoutes from './routes/user.routes';
 import { authLimiter } from './middleware/rateLimit';
+import { checkDeadlineReminders } from './services/deadlineReminders';
 
 dotenv.config();
 
@@ -86,6 +87,13 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: 'שגיאה בשרת. נסו שוב בעוד רגע.' });
 });
 
+// Checked every 5 minutes — frequent enough that a reminder lands within a
+// few minutes of crossing its threshold, infrequent enough to be a non-issue
+// for DB load. The only background timer in this codebase; see
+// deadlineReminders.ts's docstring for why this one specifically can't be
+// lazy/on-request like everything else here.
+const DEADLINE_REMINDER_INTERVAL_MS = 5 * 60 * 1000;
+
 async function bootstrap(): Promise<void> {
   try {
     await AppDataSource.initialize();
@@ -94,6 +102,12 @@ async function bootstrap(): Promise<void> {
     app.listen(PORT, () => {
       console.log(`ChoreChamps server running on http://localhost:${PORT}`);
     });
+
+    setInterval(() => {
+      checkDeadlineReminders().catch((err) => {
+        console.error('[deadlineReminders] check failed:', err);
+      });
+    }, DEADLINE_REMINDER_INTERVAL_MS);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

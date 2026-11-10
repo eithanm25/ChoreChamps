@@ -12,6 +12,7 @@ import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { FamilyInfo } from '../types/family';
 import { MAX_REFERENCE_PHOTOS_BY_TIER, tierAllowsPdfUploads } from '../types/family';
 import type { TaskFrequency } from '../types/task';
+import { splitBalance } from '../utils/balance';
 import LocalMediaThumbnail from '../components/LocalMediaThumbnail';
 import ParentCoinAdjustPanel from '../components/ParentCoinAdjustPanel';
 import AvatarBadge from '../components/AvatarBadge';
@@ -590,10 +591,14 @@ export default function ParentDashboard({ user, onLogout, onUserUpdate }: Dashbo
                       ) : (
                         <div className="flex flex-col gap-1 mt-1 font-medium">
                           <p className="text-emerald-400">🏆 סך משימות שביצע אי פעם: {member.lifetimeTasksCount || 0}</p>
-                          <p className="text-amber-400">💰 יתרת מטבעות זמינה: {member.balance || 0}</p>
-                          
+                          <p className="text-amber-400">
+                            💰 יתרת מטבעות זמינה: {splitBalance(member.balance || 0).displayBalance}
+                            {splitBalance(member.balance || 0).debt > 0 && (
+                              <span className="text-rose-400"> (חוב: {splitBalance(member.balance || 0).debt})</span>
+                            )}
+                          </p>
                         </div>
-                        
+
                       )}
                       
                     </div>
